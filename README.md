@@ -4,11 +4,17 @@ MvnBuilder is a robust administrative dashboard designed to manage complex Maven
 
 ## 🚀 Key Features
 
+![Workspaces Overview](img/workspace.png)
+
+
 ### 🛠️ Advanced Build Management
 - **Multiple Build Profiles**: Define and store custom Maven commands (e.g., `-B clean install`, `-B package -DskipTests`). Switch between profiles instantly with a single click.
 - **Real-time Log Streaming**: Watch your build progress live via WebSockets.
 - **Process Control**: Monitor the active process **PID**, see the exact **execution duration**, and **terminate (Kill)** any running build if needed.
 - **Topological Sorting**: Automatically calculates the correct build order based on project dependencies, ensuring parent projects wait for children.
+
+![Workspace Detail View](img/detail.png)
+
 
 ### 🧹 M2 Repository Maintenance
 - **Physical Folder Discovery**: Scans your `~/.m2/repository` to find actual physical parent folders (Group IDs).
