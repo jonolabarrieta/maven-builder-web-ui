@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <div th:fragment="profile-selector-fragment" id="profile-selector-container" class="flex items-center space-x-2">
+        <div class="relative flex items-center">
+            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest mr-2">Build Profile:</span>
+            <select onchange="activateProfile(this.value)" class="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block px-3 py-1.5 font-medium shadow-sm outline-none cursor-pointer">
+                <option th:each="p : ${profiles}" th:value="${p.id}" th:text="${p.name}" th:selected="${p.isDefault}"></option>
+            </select>
+        </div>
+        <button onclick="document.getElementById('profile-manager-modal').classList.remove('hidden')" class="text-gray-400 hover:text-indigo-600 transition-colors p-1" title="Manage Profiles">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+        </button>
+
+        <script>
+            function activateProfile(profileId) {
+                fetch('/settings/profiles/' + profileId + '/activate', { method: 'POST' })
+                    .then(() => {
+                        htmx.ajax('GET', '/settings/profiles/selector', {target: '#profile-selector-container', swap: 'outerHTML'});
+                    });
+            }
+        </script>
+
+        <!-- Manage Profiles Modal (OOB Swap to the body container) -->
+        <div id="profile-manager-modal-container" hx-swap-oob="true">
+            <div id="profile-manager-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+                <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all flex flex-col max-h-[90vh]">
+                    <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
+                        <h3 class="text-xl font-bold text-gray-800">Manage Build Profiles</h3>
+                        <button onclick="document.getElementById('profile-manager-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="px-8 py-6 border-b border-gray-100 bg-gray-50">
+                        <form hx-post="/settings/profiles/add" hx-target="#profile-selector-container" class="flex gap-4">
+                            <input type="text" name="name" required placeholder="Name (e.g. Fast Build)" class="w-1/3 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                            <input type="text" name="command" required placeholder="Args (e.g. -B clean install -DskipTests)" class="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all font-semibold shadow-sm whitespace-nowrap">
+                                Add Profile
+                            </button>
+                        </form>
+                    </div>
+                    <div class="p-8 overflow-y-auto flex-1">
+                        <ul class="divide-y divide-gray-100">
+                            <li th:each="p : ${profiles}" class="py-3 flex justify-between items-center">
+                                <div>
+                                    <span class="font-bold text-gray-800" th:text="${p.name}">Profile Name</span>
+                                    <span th:if="${p.isDefault}" class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Active</span>
+                                    <p class="text-sm text-gray-500 font-mono mt-1" th:text="'mvn ' + ${p.command}">mvn clean install</p>
+                                </div>
+                                <button th:if="${!p.isDefault}" th:attr="hx-post=@{/settings/profiles/{id}/delete(id=${p.id})}" hx-target="#profile-selector-container" class="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors" title="Delete Profile">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

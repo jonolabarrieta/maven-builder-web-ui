@@ -1,0 +1,60 @@
+<div th:fragment="branch-list" class="flex flex-col animate-in fade-in zoom-in duration-200" id="branch-modal-content-inner">
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <div>
+            <h3 class="text-lg font-bold text-gray-800" th:text="${project.artifactId}">Project Name</h3>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Branch Management</p>
+        </div>
+        <button onclick="document.getElementById('branch-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    <div class="p-6">
+        <!-- Spinner (hidden by default) -->
+        <div id="branch-loading" class="hidden py-12 text-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p class="text-sm font-medium text-gray-500">Processing request...</p>
+        </div>
+
+        <div id="branch-list-container" class="space-y-6">
+            <div>
+                <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Available Branches</label>
+                <div class="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                    <button th:each="branch : ${branches}" 
+                            th:attr="hx-post=@{/projects/{id}/checkout(id=${project.id}, branch=${branch})}"
+                            hx-swap="none"
+                            hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error switching branch. Check logs for details.'); window.location.reload(); }"
+                            onclick="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
+                            th:class="${branch == currentBranch ? 'w-full text-left px-4 py-3 text-sm font-bold text-indigo-600 bg-indigo-50 rounded-xl flex items-center justify-between' : 'w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100'}"
+                            th:text="${branch}">
+                        branch-name
+                        <svg th:if="${branch == currentBranch}" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="pt-6 border-t border-gray-100">
+                <form th:attr="hx-post=@{/projects/{id}/create-branch(id=${project.id})}"
+                      hx-swap="none"
+                      hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error creating branch. Check logs for details.'); window.location.reload(); }"
+                      onsubmit="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
+                      class="space-y-3">
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Create New Branch</label>
+                    <div class="flex space-x-2">
+                        <input type="text" name="branch" required placeholder="feature/new-branch" 
+                               class="flex-grow px-4 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 font-bold">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,60 @@
+name: Release Native Binary
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Build Native Image
+        run: mvn -Pnative native:compile
+
+      - name: Prepare Artifact
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            cp target/mvn-builder.exe release-artifacts/mvn-builder-windows-amd64.exe
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            cp target/mvn-builder release-artifacts/mvn-builder-macos-amd64
+          else
+            cp target/mvn-builder release-artifacts/mvn-builder-linux-amd64
+          fi
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

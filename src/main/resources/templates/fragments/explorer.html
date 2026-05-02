@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+    <div th:fragment="explorer-content">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+            <div>
+                <h3 class="text-lg font-bold text-gray-800">File Explorer</h3>
+                <p class="text-xs text-gray-400 font-mono truncate max-w-xs" th:text="${currentPath}">/path/to/dir</p>
+            </div>
+            <button onclick="document.getElementById('explorer-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                <svg xmlns:th="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        
+        <div class="p-4 h-[400px] overflow-y-auto">
+            <div th:if="${parentPath != null}" class="mb-2">
+                <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${parentPath})}"
+                        hx-target="#explorer-modal-content"
+                        class="flex items-center space-x-2 w-full p-2 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                    <span class="text-sm font-bold">.. / Up</span>
+                </button>
+            </div>
+            
+            <div class="space-y-1">
+                <div th:each="item : ${items}" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-all">
+                    <div class="flex items-center space-x-3 flex-grow cursor-pointer" 
+                         th:if="${item.directory}"
+                         th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${item.path})}"
+                         hx-target="#explorer-modal-content">
+                        <div class="p-2 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-amber-100 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium text-gray-700" th:text="${item.name}">folder-name</span>
+                    </div>
+                    
+                    <div class="flex items-center space-x-3 flex-grow" th:if="${!item.directory}">
+                        <div class="p-2 bg-gray-50 text-gray-400 rounded-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <span class="text-sm font-medium text-gray-400" th:text="${item.name}">file-name</span>
+                    </div>
+
+                    <div th:if="${item.mavenProject}" class="flex items-center space-x-2">
+                        <span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase border border-indigo-100">Maven</span>
+                        <input type="checkbox" name="selected-paths" th:value="${item.path}" class="explorer-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+            <span class="text-xs text-gray-400 font-medium"><span id="explorer-count">0</span> projects selected</span>
+            <button onclick="addSelectedProjects()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-bold text-sm">
+                Add Selected
+            </button>
+        </div>
+
+        <script>
+            document.querySelectorAll('.explorer-checkbox').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const count = document.querySelectorAll('.explorer-checkbox:checked').length;
+                    document.getElementById('explorer-count').innerText = count;
+                });
+            });
+        </script>
+    </div>
+</body>
+</html>

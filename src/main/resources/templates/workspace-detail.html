@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${workspace.name + ' - MvnBuilder'}">Workspace Detail</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
+        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .console { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.4; }
+        .badge { @apply px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        #log-containers > div::-webkit-scrollbar { width: 6px; }
+        #log-containers > div::-webkit-scrollbar-track { background: transparent; }
+        #log-containers > div::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+        #log-containers > div::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    </style>
+</head>
+<body class="text-gray-900">
+    <nav class="glass sticky top-0 z-50 px-6 py-4 flex justify-between items-center shadow-sm">
+        <div class="flex items-center space-x-4">
+            <a href="/" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+            </a>
+            <div class="flex items-center space-x-2 border-l pl-4">
+                <span class="text-xl font-bold tracking-tight text-gray-800" th:text="${workspace.name}">Workspace Name</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button onclick="document.getElementById('edit-workspace-modal').classList.remove('hidden')" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-50 transition-all font-medium flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Settings
+            </button>
+            <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id})}"
+                    hx-target="#explorer-modal-content"
+                    hx-trigger="click"
+                    onclick="document.getElementById('explorer-modal').classList.remove('hidden')"
+                    class="bg-white text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-50 transition-all font-medium flex items-center shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Project
+            </button>
+            <form th:action="@{/workspaces/{id}/refresh(id=${workspace.id})}" method="POST">
+                <button type="submit" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Refresh projects from disk">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                </button>
+            </form>
+            <form th:action="@{/workspaces/{id}/calculate-order(id=${workspace.id})}" method="POST">
+                <button type="submit" class="bg-indigo-50 text-indigo-600 border border-indigo-100 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-all font-medium flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Auto-Order
+                </button>
+            </form>
+            
+            <div class="h-6 w-px bg-gray-200 mx-2"></div>
+            
+            <div hx-get="/settings/profiles/selector" hx-trigger="load" hx-swap="outerHTML">
+                <div class="animate-pulse bg-gray-200 h-10 w-48 rounded-lg"></div>
+            </div>
+
+            <button th:attr="hx-post=@{/workspaces/{id}/build-all(id=${workspace.id})}" hx-swap="none" onclick="clearLogs()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-medium flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Build All
+            </button>
+        </div>
+    </nav>
+
+    <main class="max-width-[1600px] mx-auto px-6 py-8 space-y-6">
+        <!-- Workspace Info (Top) -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center space-x-6">
+                <div>
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Base Path</div>
+                    <div class="text-sm text-gray-600 font-mono" th:text="${workspace.basePath ?: 'No path defined'}">/path/to/workspace</div>
+                </div>
+                <div class="border-l pl-6">
+                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Projects</div>
+                    <div class="text-sm font-bold text-indigo-600" th:text="${projects.size()}">0</div>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                <span class="flex items-center"><span class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span> Drag projects to reorder</span>
+                <span class="flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Auto-order uses dependencies</span>
+            </div>
+        </div>
+
+        <!-- Log Area (Top, Full Width) -->
+        <div class="bg-gray-900 rounded-2xl shadow-xl overflow-hidden flex flex-col" style="height: 400px; resize: vertical; min-height: 150px;">
+            <!-- Log Header / Tabs -->
+            <div class="bg-gray-800 border-b border-gray-700 flex flex-col shrink-0">
+                <div class="px-4 py-2 flex justify-between items-center border-b border-gray-700/50">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Build Output</span>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div id="process-info" class="hidden flex items-center space-x-3 bg-gray-700/50 px-3 py-1 rounded-full border border-gray-600">
+                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">PID: <span id="current-pid" class="text-indigo-400">0</span></span>
+                            <button hx-post="/build/kill" hx-swap="none" class="text-red-400 hover:text-red-300 transition-colors flex items-center space-x-1 group/kill">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span class="text-[10px] font-bold uppercase tracking-widest">Kill</span>
+                            </button>
+                        </div>
+                        <button onclick="clearLogs()" class="text-gray-500 hover:text-gray-300 transition-colors p-1 hover:bg-gray-700 rounded" title="Clear All Logs">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div id="log-tabs" class="flex items-center px-2 overflow-x-auto no-scrollbar bg-gray-800/50">
+                    <button onclick="switchTab('Global')" id="tab-Global" class="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-indigo-500 text-white flex items-center space-x-2 shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        <span>Global</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Log Content Containers -->
+            <div id="log-containers" class="flex-grow relative bg-gray-950">
+                <div id="log-container-Global" class="absolute inset-0 p-4 overflow-y-auto console text-gray-300 space-y-1 block">
+                    <div class="text-gray-500 italic opacity-50 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3" />
+                        </svg>
+                        Waiting for process logs...
+                    </div>
+                </div>
+            </div>
+
+            <div id="retry-container" class="hidden bg-red-900/60 backdrop-blur-md border-t border-red-800/50 px-4 py-3 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                    </div>
+                    <span class="text-sm font-medium text-red-100">Build failed at project: <span id="failed-project-name" class="font-bold text-white underline decoration-red-500 decoration-2 underline-offset-4"></span></span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="retry-button" class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-xl transition-all shadow-lg shadow-red-900/40 text-xs font-bold uppercase tracking-widest flex items-center group">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-2 group-hover:rotate-180 transition-transform duration-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Retry from here
+                    </button>
+                    <button onclick="document.getElementById('retry-container').classList.add('hidden')" class="text-red-300 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-all" title="Dismiss">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-8">
+            <!-- Projects Table -->
+            <div class="flex-grow">
+                <!-- Bulk Action Toolbar -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2 border-r pr-4">
+                            <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            <label for="select-all" class="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer">Select All</label>
+                        </div>
+                        <div id="bulk-actions" class="flex items-center space-x-2 border-r pr-4">
+                            <button onclick="executeBulkAction('fetch')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                </svg>
+                                <span>Fetch</span>
+                            </button>
+                            <button onclick="executeBulkAction('pull')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                </svg>
+                                <span>Pull</span>
+                            </button>
+                            <button onclick="executeBulkAction('build')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>Build</span>
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                        </div>
+                    </div>
+                    <div class="text-xs font-medium text-gray-400">
+                        <span id="selected-count">0</span> projects selected
+                    </div>
+                </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-6 py-4 w-10"></th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest w-16">Status</th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest w-16">Order</th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Project</th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Git Status</th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Modules</th>
+                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="project-table-body" class="divide-y divide-gray-50">
+                        <tr th:each="project : ${projects}" 
+                            class="hover:bg-gray-50/50 transition-all duration-300 group cursor-move" 
+                            th:classappend="${!project.enabled ? 'opacity-40 grayscale' : ''}"
+                            th:attr="data-id=${project.id}"
+                            th:id="'project-row-' + ${project.id}">
+                            <td class="px-6 py-4">
+                                <input type="checkbox" name="project-checkbox" th:value="${project.id}" onchange="updateSelectedCount()" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            </td>
+                            <td class="px-6 py-4">
+                                <button th:attr="hx-post=@{/projects/{id}/toggle-enabled(id=${project.id})}"
+                                        hx-swap="none"
+                                        th:onclick="'toggleProjectRow(' + ${project.id} + ', this)'"
+                                        class="transition-all p-2 rounded-xl border"
+                                        th:classappend="${project.enabled ? 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100'}"
+                                        th:title="${project.enabled ? 'Disable Project' : 'Enable Project'}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828a5 5 0 117.07 0m-4.242-4.242V4" />
+                                    </svg>
+                                </button>
+                            </td>
+                            <td class="px-6 py-4 flex items-center space-x-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300 hover:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                                </svg>
+                                <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-gray-500" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center space-x-2">
+                                    <div class="font-bold text-gray-800" th:text="${project.artifactId}">artifact-id</div>
+                                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${project.version}">1.0.0</span>
+                                </div>
+                                <div class="text-xs text-gray-400 font-mono" th:text="${project.groupId}">group.id</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <button th:attr="hx-get=@{/projects/{id}/branches(id=${project.id})}"
+                                        hx-target="#branch-modal-content"
+                                        hx-trigger="click"
+                                        onclick="document.getElementById('branch-modal').classList.remove('hidden')"
+                                        class="flex items-center space-x-2 hover:bg-gray-100 px-2 py-1 rounded-lg transition-all group/branch">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/branch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                    </svg>
+                                    <span class="text-sm font-medium text-gray-600" th:text="${project.gitBranch}">main</span>
+                                </button>
+                            </td>
+                            <td class="px-6 py-4">
+                                <button th:unless="${project.modules.empty}"
+                                        th:attr="hx-get=@{/projects/{id}/children(id=${project.id})}"
+                                        hx-target="#children-modal-content"
+                                        hx-trigger="click"
+                                        onclick="document.getElementById('children-modal').classList.remove('hidden')"
+                                        class="flex items-center space-x-1.5 px-2.5 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-all border border-indigo-100 group/mod">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider">View Recursive</span>
+                                </button>
+                                <span th:if="${project.modules.empty}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="flex justify-end space-x-2">
+                                    <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
+                                            hx-target="#m2-modal-content"
+                                            hx-trigger="click"
+                                            onclick="document.getElementById('m2-modal').classList.remove('hidden')"
+                                            class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Local M2 Repository">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                        </svg>
+                                    </button>
+                                    <button th:attr="hx-post=@{/projects/{id}/fetch(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/fetch" title="Git Fetch">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/fetch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                        </svg>
+                                        <span>Fetch</span>
+                                    </button>
+                                    <button th:attr="hx-post=@{/projects/{id}/pull(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/pull" title="Git Pull">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/pull:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                        </svg>
+                                        <span>Pull</span>
+                                    </button>
+                                    <button th:attr="hx-post=@{/projects/{id}/build(id=${project.id})}" hx-swap="none" onclick="clearLogs()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md group/build" title="Maven Build">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white/80 group-hover/build:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span>Build</span>
+                                    </button>
+                                    <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
+                                            hx-confirm="Are you sure you want to remove this project and all its submodules?"
+                                            class="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        </div>
+    </main>
+
+    <!-- Edit Workspace Modal -->
+    <div id="edit-workspace-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all">
+            <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
+                <h3 class="text-2xl font-bold text-gray-800">Workspace Settings</h3>
+                <button onclick="document.getElementById('edit-workspace-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-8 space-y-8">
+                <form th:action="@{/workspaces/{id}/edit(id=${workspace.id})}" method="POST" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Workspace Name</label>
+                        <input type="text" name="name" th:value="${workspace.name}" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Base Directory Path</label>
+                        <input type="text" name="basePath" th:value="${workspace.basePath}" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                        <p class="mt-2 text-xs text-amber-600 font-medium flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            Changing the path will re-scan all projects.
+                        </p>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-indigo-200 shadow-lg">
+                        Save Changes
+                    </button>
+                </form>
+
+                <div class="pt-6 border-t border-gray-100">
+                    <h4 class="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">Danger Zone</h4>
+                    <form th:action="@{/workspaces/{id}/delete(id=${workspace.id})}" method="POST" onsubmit="return confirm('Are you sure you want to delete this workspace? This cannot be undone.');">
+                        <button type="submit" class="w-full bg-red-50 text-red-600 hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
+                            Delete Workspace
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Selector Modal -->
+    <div id="branch-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl transform transition-all overflow-hidden">
+            <div id="branch-modal-content">
+                <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- M2 Modal -->
+    <div id="m2-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+            <div id="m2-modal-content">
+                <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Explorer Modal -->
+    <div id="explorer-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all overflow-hidden">
+            <div id="explorer-modal-content">
+                <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recursive Children Modal -->
+    <div id="children-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl transform transition-all overflow-hidden">
+            <div id="children-modal-content">
+                <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script th:inline="javascript">
+        const workspaceId = [[${workspace.id}]];
+        let socket = new SockJS('/ws-logs');
+        let stompClient = Stomp.over(socket);
+        stompClient.debug = null;
+
+        let activeTab = 'Global';
+        const projectTabs = { 'Global': true };
+
+        stompClient.connect({}, function (frame) {
+            stompClient.subscribe('/topic/logs', function (message) {
+                const log = JSON.parse(message.body);
+                appendLog(log.label, log.content);
+            });
+
+            stompClient.subscribe('/topic/process', function (message) {
+                const info = JSON.parse(message.body);
+                updateProcessInfo(info.pid, info.active);
+            });
+
+            stompClient.subscribe('/topic/build-failure', function (message) {
+                const failure = JSON.parse(message.body);
+                showRetryButton(failure);
+            });
+        });
+
+        function showRetryButton(failure) {
+            const retryContainer = document.getElementById('retry-container');
+            const failedProjectSpan = document.getElementById('failed-project-name');
+            const retryButton = document.getElementById('retry-button');
+            
+            failedProjectSpan.innerText = failure.projectName;
+            retryContainer.classList.remove('hidden');
+            
+            retryButton.onclick = function() {
+                retryContainer.classList.add('hidden');
+                executeBulkAction('build', failure.remainingProjectIds);
+            };
+        }
+
+        function updateProcessInfo(pid, active) {
+            const infoDiv = document.getElementById('process-info');
+            const pidSpan = document.getElementById('current-pid');
+            if (active && pid > 0) {
+                pidSpan.innerText = pid;
+                infoDiv.classList.remove('hidden');
+            } else {
+                infoDiv.classList.add('hidden');
+            }
+        }
+
+        function appendLog(label, content) {
+            // Append to Global tab
+            appendLineToContainer('Global', label, content);
+
+            // Append to specific project tab
+            if (label && label !== 'Global') {
+                if (!projectTabs[label]) {
+                    createTab(label);
+                }
+                appendLineToContainer(label, null, content);
+            }
+        }
+
+        function createTab(label) {
+            projectTabs[label] = true;
+            const tabContainer = document.getElementById('log-tabs');
+            
+            const button = document.createElement('button');
+            button.id = `tab-${label}`;
+            button.onclick = () => switchTab(label);
+            button.className = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center space-x-2 shrink-0';
+            button.innerHTML = `
+                <span class="w-1.5 h-1.5 bg-indigo-500/50 rounded-full"></span>
+                <span>${label}</span>
+            `;
+            tabContainer.appendChild(button);
+
+            const containers = document.getElementById('log-containers');
+            const div = document.createElement('div');
+            div.id = `log-container-${label}`;
+            div.className = 'absolute inset-0 p-4 overflow-y-auto console text-gray-300 space-y-1 hidden';
+            containers.appendChild(div);
+
+            // Auto-switch to the first non-Global project tab if we are still on Global
+            if (activeTab === 'Global') {
+                switchTab(label);
+            }
+        }
+
+        function switchTab(label) {
+            // Hide current
+            const currentContainer = document.getElementById(`log-container-${activeTab}`);
+            const currentTab = document.getElementById(`tab-${activeTab}`);
+            if (currentContainer) currentContainer.classList.add('hidden');
+            if (currentTab) {
+                currentTab.classList.remove('border-indigo-500', 'text-white');
+                currentTab.classList.add('border-transparent', 'text-gray-500');
+            }
+
+            // Show new
+            activeTab = label;
+            const nextContainer = document.getElementById(`log-container-${label}`);
+            const nextTab = document.getElementById(`tab-${label}`);
+            if (nextContainer) nextContainer.classList.remove('hidden');
+            if (nextTab) {
+                nextTab.classList.add('border-indigo-500', 'text-white');
+                nextTab.classList.remove('border-transparent', 'text-gray-500');
+            }
+
+            // Scroll to bottom of the new tab
+            if (nextContainer) {
+                nextContainer.scrollTop = nextContainer.scrollHeight;
+            }
+        }
+
+        function appendLineToContainer(containerId, label, content) {
+            const container = document.getElementById(`log-container-${containerId}`);
+            if (!container) return;
+
+            if (container.children.length > 0 && container.children[0].classList.contains('italic')) {
+                container.innerHTML = '';
+            }
+            
+            const div = document.createElement('div');
+            div.className = 'hover:bg-white/5 transition-colors px-1 rounded';
+            const labelSpan = label ? `<span class="text-indigo-400/80 font-bold mr-2 text-[10px] tracking-tighter">[${label}]</span>` : '';
+            div.innerHTML = labelSpan + `<span class="break-words">${escapeHtml(content)}</span>`;
+            container.appendChild(div);
+            
+            // Auto-scroll if it's the active tab
+            if (activeTab === containerId) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function clearLogs() {
+            // Reset Global container
+            const globalContainer = document.getElementById('log-container-Global');
+            globalContainer.innerHTML = `
+                <div class="text-gray-500 italic opacity-50 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3" />
+                    </svg>
+                    Waiting for process logs...
+                </div>`;
+
+            // Remove all other tabs and containers
+            const tabContainer = document.getElementById('log-tabs');
+            const logContainers = document.getElementById('log-containers');
+            
+            Object.keys(projectTabs).forEach(label => {
+                if (label !== 'Global') {
+                    const tab = document.getElementById(`tab-${label}`);
+                    const container = document.getElementById(`log-container-${label}`);
+                    if (tab) tab.remove();
+                    if (container) container.remove();
+                    delete projectTabs[label];
+                }
+            });
+
+            switchTab('Global');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function toggleProjectRow(id, btn) {
+            const row = document.getElementById(`project-row-${id}`);
+            const isEnabled = btn.classList.contains('text-green-600');
+            
+            if (isEnabled) {
+                // Disable
+                btn.classList.remove('bg-green-50', 'text-green-600', 'border-green-100', 'hover:bg-green-100');
+                btn.classList.add('bg-gray-50', 'text-gray-400', 'border-gray-100', 'hover:bg-gray-100');
+                btn.title = 'Enable Project';
+                row.classList.add('opacity-40', 'grayscale');
+            } else {
+                // Enable
+                btn.classList.add('bg-green-50', 'text-green-600', 'border-green-100', 'hover:bg-green-100');
+                btn.classList.remove('bg-gray-50', 'text-gray-400', 'border-gray-100', 'hover:bg-gray-100');
+                btn.title = 'Disable Project';
+                row.classList.remove('opacity-40', 'grayscale');
+            }
+        }
+
+        // Checkbox logic
+        function toggleAllCheckboxes(source) {
+            const checkboxes = document.getElementsByName('project-checkbox');
+            for(let i=0, n=checkboxes.length; i<n; i++) {
+                checkboxes[i].checked = source.checked;
+            }
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.getElementsByName('project-checkbox');
+            let count = 0;
+            for(let i=0, n=checkboxes.length; i<n; i++) {
+                if(checkboxes[i].checked) count++;
+            }
+            document.getElementById('selected-count').innerText = count;
+        }
+
+        function executeBulkAction(action, overrideIds = null) {
+            const selectedIds = overrideIds || [];
+            if (!overrideIds) {
+                const checkboxes = document.getElementsByName('project-checkbox');
+                for(let i=0, n=checkboxes.length; i<n; i++) {
+                    if(checkboxes[i].checked) selectedIds.push(checkboxes[i].value);
+                }
+            }
+
+            if (selectedIds.length === 0) {
+                alert('Please select at least one project.');
+                return;
+            }
+
+            if (action === 'build') {
+                clearLogs();
+                document.getElementById('retry-container').classList.add('hidden');
+            }
+
+            const formData = new FormData();
+            formData.append('action', action);
+            selectedIds.forEach(id => formData.append('projectIds', id));
+
+            fetch(`/workspaces/${workspaceId}/bulk-action`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (!response.ok) {
+                    alert('Error executing bulk action');
+                }
+            });
+        }
+
+        function addSelectedProjects() {
+            const checkboxes = document.querySelectorAll('.explorer-checkbox:checked');
+            const paths = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (paths.length === 0) {
+                alert('Please select at least one project.');
+                return;
+            }
+
+            const formData = new FormData();
+            paths.forEach(path => formData.append('paths', path));
+
+            fetch(`/workspaces/${workspaceId}/explorer/add`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error adding projects');
+                }
+            });
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const branchModal = document.getElementById('branch-modal');
+            const editModal = document.getElementById('edit-workspace-modal');
+            const m2Modal = document.getElementById('m2-modal');
+            const explorerModal = document.getElementById('explorer-modal');
+            const childrenModal = document.getElementById('children-modal');
+            const profileModal = document.getElementById('profile-manager-modal');
+            if (event.target == branchModal) branchModal.classList.add('hidden');
+            if (event.target == editModal) editModal.classList.add('hidden');
+            if (event.target == m2Modal) m2Modal.classList.add('hidden');
+            if (event.target == explorerModal) explorerModal.classList.add('hidden');
+            if (event.target == childrenModal) childrenModal.classList.add('hidden');
+            if (event.target == profileModal) profileModal.classList.add('hidden');
+        }
+
+        // SortableJS init
+        document.addEventListener('DOMContentLoaded', function() {
+            const tbody = document.getElementById('project-table-body');
+            if (tbody) {
+                new Sortable(tbody, {
+                    animation: 150,
+                    ghostClass: 'bg-indigo-50',
+                    onEnd: function (evt) {
+                        const rows = tbody.querySelectorAll('tr');
+                        const projectIds = [];
+                        rows.forEach((row, index) => {
+                            projectIds.push(row.getAttribute('data-id'));
+                            const orderSpan = row.querySelector('.order-number');
+                            if (orderSpan) orderSpan.innerText = index + 1;
+                        });
+
+                        fetch(`/workspaces/${workspaceId}/update-order`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify(projectIds)
+                        }).then(response => {
+                            if (!response.ok) {
+                                alert('Error updating order manually');
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    </script>
+    <!-- Profile Manager Modal Placeholder -->
+    <div id="profile-manager-modal-container"></div>
+
+</body>
+</html>
