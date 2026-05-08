@@ -54,11 +54,47 @@ This project is a testament to the power of modern Agentic AI. It was developed 
 - Java 21+
 - Maven 3.9+
 
-### Running Locally
+### Default Port
+The application runs on port **3333** by default. You can change this by setting the `SERVER_PORT` environment variable or modifying `src/main/resources/application.properties`.
+
+### 🚀 Running the Application
+
+#### 1. Standard Java JAR
+```bash
+java -jar target/mvn-builder.jar
+```
+
+#### 2. Native Binary (Linux/macOS/Windows)
+```bash
+# Linux/macOS
+./mvn-builder
+
+# Windows
+mvn-builder.exe
+```
+
+#### 3. Docker Compose (Recommended)
+Download the `docker-compose.yml` file and run:
+```bash
+curl -O https://raw.githubusercontent.com/jonolabarrieta/maven-builder-web-ui/main/docker-compose.yml
+docker compose up -d
+```
+*Note: This will use the image from GHCR and persist data in `./data`.*
+
+#### 4. Docker Run
+```bash
+docker run -d \
+  -p 3333:3333 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/workspaces:/workspaces \
+  ghcr.io/jonolabarrieta/maven-builder-web-ui:latest
+```
+
+### Development Mode
 ```bash
 ./run.sh
 ```
-The application will be available at `http://localhost:8080`.
+The application will be available at `http://localhost:3333`.
 
 ---
 

@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build:
@@ -35,8 +36,11 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
+      - name: Build JAR
+        run: mvn clean package -DskipTests
+
       - name: Build Native Image
-        run: mvn -Pnative native:compile
+        run: mvn -Pnative native:compile -DskipTests
 
       - name: Prepare Artifact
         shell: bash
@@ -48,6 +52,7 @@ jobs:
             cp target/mvn-builder release-artifacts/mvn-builder-macos-amd64
           else
             cp target/mvn-builder release-artifacts/mvn-builder-linux-amd64
+            cp target/mvn-builder-*.jar release-artifacts/mvn-builder.jar
           fi
 
       - name: Upload to Release
@@ -58,3 +63,21 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        if: matrix.os == 'ubuntu-latest'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        if: matrix.os == 'ubuntu-latest'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}

@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  mvn-builder:
+    image: ghcr.io/jonolabarrieta/maven-builder-web-ui:latest
+    container_name: mvn-builder
+    ports:
+      - "3333:3333"
+    volumes:
+      - ./data:/app/data
+      - ./workspaces:/workspaces
+    environment:
+      # Use the volume for the database
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:/app/data/mvnbuilder
+      # Default path for project scanning
+      - BASE_PATH=/workspaces
+    restart: unless-stopped
