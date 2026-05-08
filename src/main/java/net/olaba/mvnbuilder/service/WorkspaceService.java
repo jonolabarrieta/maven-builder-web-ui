@@ -129,6 +129,7 @@ public class WorkspaceService {
                     .withGroupId(originalProject.getGroupId())
                     .withVersion(originalProject.getVersion())
                     .withRelativePath(originalProject.getRelativePath())
+                    .withAbsolutePath(originalProject.getAbsolutePath())
                     .withGitBranch(originalProject.getGitBranch())
                     .withExecutionOrder(originalProject.getExecutionOrder())
                     .withParentKey(originalProject.getParentKey())
@@ -255,6 +256,7 @@ public class WorkspaceService {
             projectToSave.setVersion(projectData.getVersion());
             projectToSave.setModules(projectData.getModules());
             projectToSave.setInternalDependencies(projectData.getInternalDependencies());
+            projectToSave.setAbsolutePath(projectData.getAbsolutePath());
         } else {
             projectToSave = projectData;
             projectToSave.setWorkspace(workspace);
@@ -279,7 +281,8 @@ public class WorkspaceService {
         final File[] files = dir.listFiles();
         if (files != null) {
             for (final File file : files) {
-                if (file.isDirectory() && !file.getName().startsWith(".")) {
+                final String name = file.getName();
+                if (file.isDirectory() && !name.startsWith(".") && !name.equals("target") && !name.equals("node_modules")) {
                     findPomFiles(file, pomFiles);
                 }
             }
@@ -336,11 +339,15 @@ public class WorkspaceService {
             return;
         }
 
-        final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, false);
+        final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
         for (final MavenProject project : projects) {
-            // Ensure we use the correct path separator when building the absolute path
-            final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
-            final File projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
+            final File projectDir;
+            if (project.getAbsolutePath() != null) {
+                projectDir = new File(project.getAbsolutePath());
+            } else {
+                final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
+                projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
+            }
             project.setGitBranch(gitService.getCurrentBranch(projectDir));
             mavenProjectRepository.save(project);
         }

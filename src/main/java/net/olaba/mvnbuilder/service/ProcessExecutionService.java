@@ -88,18 +88,30 @@ public class ProcessExecutionService {
      */
     public void killCurrentProcess() {
         if (currentProcess != null && currentProcess.isAlive()) {
-            log.info("Killing process with PID: {}", currentProcess.pid());
-            currentProcess.destroy(); // Send SIGTERM
-            
-            try {
-                // Wait up to 2 seconds for clean exit before forcing
-                if (!currentProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                    log.warn("Process did not exit in time, forcing kill...");
-                    currentProcess.destroyForcibly(); // Send SIGKILL
+            final long pid = currentProcess.pid();
+            log.info("Killing process with PID: {}", pid);
+
+            if (System.getProperty("os.name").toLowerCase().contains("win")) {
+                try {
+                    // On Windows, destroying the parent batch process (mvn.cmd) often leaves
+                    // the child Java process running. 'taskkill /F /T /PID' kills the entire tree.
+                    new ProcessBuilder("taskkill", "/F", "/T", "/PID", String.valueOf(pid)).start().waitFor();
+                } catch (final Exception e) {
+                    log.error("Failed to execute taskkill: {}", e.getMessage());
+                    currentProcess.destroyForcibly();
                 }
-            } catch (InterruptedException e) {
-                currentProcess.destroyForcibly();
-                Thread.currentThread().interrupt();
+            } else {
+                currentProcess.destroy(); // Send SIGTERM
+                try {
+                    // Wait up to 2 seconds for clean exit before forcing
+                    if (!currentProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                        log.warn("Process did not exit in time, forcing kill...");
+                        currentProcess.destroyForcibly(); // Send SIGKILL
+                    }
+                } catch (final InterruptedException e) {
+                    currentProcess.destroyForcibly();
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }

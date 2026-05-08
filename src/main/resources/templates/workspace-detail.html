@@ -21,6 +21,10 @@
         #log-containers > div::-webkit-scrollbar-track { background: transparent; }
         #log-containers > div::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
         #log-containers > div::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        #log-tabs::-webkit-scrollbar { height: 4px; }
+        #log-tabs::-webkit-scrollbar-track { background: transparent; }
+        #log-tabs::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        #log-tabs::-webkit-scrollbar-thumb:hover { background: #6366f1; }
     </style>
 </head>
 <body class="text-gray-900">
@@ -85,6 +89,34 @@
             </button>
         </div>
     </nav>
+    
+    <!-- Error Message Alert -->
+    <div th:if="${errorMessage}" class="max-w-[1600px] mx-auto px-6 mt-4">
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg shadow-sm">
+            <div class="flex items-center">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm text-red-700 font-medium" th:text="${errorMessage}">
+                        Error message goes here.
+                    </p>
+                </div>
+                <div class="ml-auto pl-3">
+                    <div class="-mx-1.5 -my-1.5">
+                        <button type="button" onclick="this.parentElement.parentElement.parentElement.parentElement.parentElement.remove()" class="inline-flex bg-red-50 rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600">
+                            <span class="sr-only">Dismiss</span>
+                            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <main class="max-width-[1600px] mx-auto px-6 py-8 space-y-6">
         <!-- Workspace Info (Top) -->
@@ -131,7 +163,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="log-tabs" class="flex items-center px-2 overflow-x-auto no-scrollbar bg-gray-800/50">
+                <div id="log-tabs" class="flex items-center px-2 overflow-x-auto bg-gray-800/50 border-b border-gray-700/30">
                     <button onclick="switchTab('Global')" id="tab-Global" class="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-indigo-500 text-white flex items-center space-x-2 shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -142,7 +174,7 @@
             </div>
 
             <!-- Log Content Containers -->
-            <div id="log-containers" class="flex-grow relative bg-gray-950">
+            <div id="log-containers" class="flex-grow relative bg-gray-950 overflow-hidden">
                 <div id="log-container-Global" class="absolute inset-0 p-4 overflow-y-auto console text-gray-300 space-y-1 block">
                     <div class="text-gray-500 italic opacity-50 flex items-center">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -501,10 +533,15 @@
             const button = document.createElement('button');
             button.id = `tab-${label}`;
             button.onclick = () => switchTab(label);
-            button.className = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center space-x-2 shrink-0';
+            button.className = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center space-x-2 shrink-0 group/tab';
             button.innerHTML = `
                 <span class="w-1.5 h-1.5 bg-indigo-500/50 rounded-full"></span>
                 <span>${label}</span>
+                <span onclick="closeTab('${label}', event)" class="ml-1 opacity-0 group-hover/tab:opacity-100 hover:bg-white/10 rounded-full p-0.5 transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </span>
             `;
             tabContainer.appendChild(button);
 
@@ -543,6 +580,22 @@
             // Scroll to bottom of the new tab
             if (nextContainer) {
                 nextContainer.scrollTop = nextContainer.scrollHeight;
+            }
+        }
+
+        function closeTab(label, event) {
+            if (event) event.stopPropagation();
+            
+            const tab = document.getElementById(`tab-${label}`);
+            const container = document.getElementById(`log-container-${label}`);
+            
+            if (tab) tab.remove();
+            if (container) container.remove();
+            
+            delete projectTabs[label];
+            
+            if (activeTab === label) {
+                switchTab('Global');
             }
         }
 

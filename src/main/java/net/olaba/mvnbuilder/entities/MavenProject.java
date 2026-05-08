@@ -37,7 +37,12 @@ public class MavenProject {
     private String version;
 
     /** Path relative to the workspace base path. */
+    @Column(length = 2000)
     private String relativePath;
+
+    /** Absolute file system path of the project. */
+    @Column(length = 2000)
+    private String absolutePath;
 
     /** Current Git branch of the project. */
     private String gitBranch;

@@ -147,8 +147,18 @@ public class TopologicalSortService {
         // 5. Update execution order
         log.info("Calculated build order for {} parent projects:", sortedParentKeys.size());
         int orderIndex = 0;
-        final Map<String, MavenProject> projectMap = allProjects.stream()
-                .collect(Collectors.toMap(this::key, p -> p));
+        final Map<String, MavenProject> projectMap = new HashMap<>();
+        for (final MavenProject p : allProjects) {
+            final String projectKey = key(p);
+            if (projectMap.containsKey(projectKey)) {
+                final MavenProject existing = projectMap.get(projectKey);
+                throw new IllegalStateException("Duplicate project found with key '" + projectKey + "'. " +
+                        "Path 1: " + existing.getRelativePath() + ", Path 2: " + p.getRelativePath() + ". " +
+                        "This usually means you have multiple submodules with the same groupId/artifactId. " +
+                        "Please remove or rename one of them.");
+            }
+            projectMap.put(projectKey, p);
+        }
 
         for (final String parentKey : sortedParentKeys) {
             final MavenProject parent = projectMap.get(parentKey);

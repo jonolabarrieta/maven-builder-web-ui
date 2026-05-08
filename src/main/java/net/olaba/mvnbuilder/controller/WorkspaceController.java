@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
 import java.util.List;
@@ -154,8 +155,13 @@ public class WorkspaceController {
      * @return Redirect to workspace detail.
      */
     @PostMapping("/workspaces/{id}/calculate-order")
-    public String calculateOrder(final @PathVariable Long id) {
-        topologicalSortService.calculateOrder(id);
+    public String calculateOrder(final @PathVariable Long id, final RedirectAttributes redirectAttributes) {
+        try {
+            topologicalSortService.calculateOrder(id);
+        } catch (Exception e) {
+            log.error("Error calculating build order for workspace {}: {}", id, e.getMessage());
+            redirectAttributes.addFlashAttribute("errorMessage", e.getMessage());
+        }
         return "redirect:/workspaces/" + id;
     }
 

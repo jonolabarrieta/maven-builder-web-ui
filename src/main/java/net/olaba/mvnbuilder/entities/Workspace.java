@@ -30,7 +30,7 @@ public class Workspace {
     private String name;
 
     /** Base filesystem path where projects are located. */
-    @Column(nullable = true)
+    @Column(nullable = true, length = 2000)
     private String basePath;
 
     /** List of Maven projects associated with this workspace. */
@@ -41,7 +41,7 @@ public class Workspace {
     /** List of directory paths excluded from the workspace scanning process. */
     @ElementCollection
     @CollectionTable(name = "workspace_excluded_paths", joinColumns = @JoinColumn(name = "workspace_id"))
-    @Column(name = "excluded_path")
+    @Column(name = "excluded_path", length = 2000)
     @Builder.Default
     private List<String> excludedPaths = new ArrayList<>();
 }

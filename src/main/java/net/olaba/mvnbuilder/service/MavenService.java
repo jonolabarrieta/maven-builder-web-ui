@@ -45,15 +45,19 @@ public class MavenService {
             }
             version = resolveProperty(version, model);
 
-            String relativePath = pomFile.getParentFile().getAbsolutePath()
-                    .substring(new File(workspaceBasePath).getAbsolutePath().length());
+            final String absolutePath = pomFile.getParentFile().getAbsolutePath();
+            String relativePath;
+            try {
+                relativePath = new File(workspaceBasePath).getAbsoluteFile().toPath()
+                        .relativize(new File(absolutePath).toPath()).toString();
+            } catch (final Exception e) {
+                // If we can't relativize, just use the absolute path as relative fallback
+                relativePath = absolutePath;
+            }
 
             // Normalize separators to forward slash for cross-platform consistency
             relativePath = relativePath.replace('\\', '/');
 
-            if (relativePath.startsWith("/")) {
-                relativePath = relativePath.substring(1);
-            }
             if (relativePath.isEmpty()) {
                 relativePath = ".";
             }
@@ -73,6 +77,7 @@ public class MavenService {
                     .withGroupId(groupId)
                     .withVersion(version)
                     .withRelativePath(relativePath)
+                    .withAbsolutePath(absolutePath)
                     .withModules(new ArrayList<>(modules))
                     .withInternalDependencies(internalDependencies)
                     .withParentKey(parentKey)

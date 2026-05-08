@@ -37,6 +37,15 @@ public class BuildService {
     }
 
     /**
+     * Returns the appropriate Maven executable command based on the operating system.
+     * 
+     * @return "mvn.cmd" for Windows, "mvn" otherwise.
+     */
+    private String getMvnCommand() {
+        return System.getProperty("os.name").toLowerCase().contains("win") ? "mvn.cmd" : "mvn";
+    }
+
+    /**
      * Builds a single Maven project if it is enabled.
      * 
      * @param project The project to build.
@@ -51,7 +60,7 @@ public class BuildService {
         final File projectDir = getProjectDir(project);
         final String[] args = getActiveProfileCommand();
         final String[] fullCmd = new String[args.length + 1];
-        fullCmd[0] = "mvn";
+        fullCmd[0] = getMvnCommand();
         System.arraycopy(args, 0, fullCmd, 1, args.length);
         processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd);
     }
@@ -82,7 +91,7 @@ public class BuildService {
                 final File projectDir = getProjectDir(project);
                 final String[] args = getActiveProfileCommand();
                 final String[] fullCmd = new String[args.length + 1];
-                fullCmd[0] = "mvn";
+                fullCmd[0] = getMvnCommand();
                 System.arraycopy(args, 0, fullCmd, 1, args.length);
 
                 return processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd)
@@ -163,6 +172,9 @@ public class BuildService {
      * @return The directory File object.
      */
     private File getProjectDir(final MavenProject project) {
+        if (project.getAbsolutePath() != null) {
+            return new File(project.getAbsolutePath());
+        }
         return new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
     }
 }
