@@ -105,4 +105,93 @@ public class MavenService {
         }
         return value;
     }
+
+    /**
+     * Finds and parses the parent POM file of a project and extracts its properties.
+     * 
+     * @param project The project whose parent POM properties to fetch.
+     * @return The Properties object of the parent POM, or empty Properties if none.
+     */
+    public java.util.Properties getParentPomProperties(final MavenProject project) {
+        final File pomFile = new File(project.getAbsolutePath(), "pom.xml");
+        if (!pomFile.exists()) {
+            return new java.util.Properties();
+        }
+
+        try (final FileReader reader = new FileReader(pomFile)) {
+            final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
+            final Model model = mavenReader.read(reader);
+
+            if (model.getParent() == null) {
+                return new java.util.Properties();
+            }
+
+            final org.apache.maven.model.Parent parent = model.getParent();
+            final String parentGroupId = parent.getGroupId();
+            final String parentArtifactId = parent.getArtifactId();
+            final String parentVersion = parent.getVersion();
+            final String parentRelativePath = parent.getRelativePath();
+
+            // Try to find the parent POM file:
+            // 1. Check relative path if specified (default: ../pom.xml)
+            final String relPath = parentRelativePath != null ? parentRelativePath : "../pom.xml";
+            File parentFile = new File(pomFile.getParentFile(), relPath);
+            if (parentFile.isDirectory()) {
+                parentFile = new File(parentFile, "pom.xml");
+            }
+            if (parentFile.exists()) {
+                try (final FileReader pr = new FileReader(parentFile)) {
+                    final Model parentModel = mavenReader.read(pr);
+                    String groupId = parentModel.getGroupId();
+                    if (groupId == null && parentModel.getParent() != null) {
+                        groupId = parentModel.getParent().getGroupId();
+                    }
+                    if (parentGroupId.equals(groupId) && parentArtifactId.equals(parentModel.getArtifactId())) {
+                        return parentModel.getProperties();
+                    }
+                } catch (final Exception e) {
+                    // Ignore and try ~/.m2
+                }
+            }
+
+            // 2. Look in the local ~/.m2 repository
+            final String m2Path = System.getProperty("user.home") + "/.m2/repository/"
+                    + parentGroupId.replace('.', '/') + "/" + parentArtifactId + "/" + parentVersion + "/"
+                    + parentArtifactId + "-" + parentVersion + ".pom";
+            final File m2File = new File(m2Path);
+            if (m2File.exists()) {
+                try (final FileReader pr = new FileReader(m2File)) {
+                    final Model parentModel = mavenReader.read(pr);
+                    return parentModel.getProperties();
+                }
+            }
+        } catch (final Exception e) {
+            // Log or ignore
+        }
+
+        return new java.util.Properties();
+    }
+
+    /**
+     * Finds and parses the project's own POM file and extracts its properties.
+     * 
+     * @param project The project whose POM properties to fetch.
+     * @return The Properties object of the POM, or empty Properties if none.
+     */
+    public java.util.Properties getProjectProperties(final MavenProject project) {
+        final File pomFile = new File(project.getAbsolutePath(), "pom.xml");
+        if (!pomFile.exists()) {
+            return new java.util.Properties();
+        }
+
+        try (final FileReader reader = new FileReader(pomFile)) {
+            final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
+            final Model model = mavenReader.read(reader);
+            return model.getProperties() != null ? model.getProperties() : new java.util.Properties();
+        } catch (final Exception e) {
+            // Ignore
+        }
+
+        return new java.util.Properties();
+    }
 }

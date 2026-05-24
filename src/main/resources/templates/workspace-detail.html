@@ -73,6 +73,12 @@
                     Auto-Order
                 </button>
             </form>
+            <a th:href="@{/workspaces/{id}/export-order(id=${workspace.id})}" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Export projects names in order">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export Order
+            </a>
             
             <div class="h-6 w-px bg-gray-200 mx-2"></div>
             
@@ -210,9 +216,36 @@
             </div>
         </div>
 
-        <div class="flex flex-col lg:flex-row gap-8">
+        <!-- M2 Favorites Panel (Top, Always Visible) -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-100 pb-4">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    M2 Global Favorites
+                </h3>
+                <form hx-post="/settings/m2-favorites/add" hx-target="#m2-favorites-content" class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                    <select name="groupId" required class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white min-w-[200px]">
+                        <option value="" disabled selected>Select folder from M2...</option>
+                        <option th:each="g : ${availableGroupIds}" th:value="${g}" th:text="${g}"></option>
+                    </select>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all text-sm font-semibold shadow-sm">
+                        Add Favorite
+                    </button>
+                </form>
+            </div>
+            <div id="m2-favorites-content" hx-get="/settings/m2-favorites" hx-trigger="load">
+                <div class="flex justify-center p-4">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full">
             <!-- Projects Table -->
-            <div class="flex-grow">
+
                 <!-- Bulk Action Toolbar -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-center justify-between">
                     <div class="flex items-center space-x-4">
@@ -232,6 +265,24 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                 </svg>
                                 <span>Pull</span>
+                            </button>
+                            <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Unstage all staged changes">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                </svg>
+                                <span>Unstage</span>
+                            </button>
+                            <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-all shadow-sm" title="Discard all local unstaged changes">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span>Discard Changes</span>
+                            </button>
+                            <button onclick="openBulkBranchModal()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Checkout branch for selected projects">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                </svg>
+                                <span>Branch</span>
                             </button>
                             <button onclick="executeBulkAction('build')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -324,6 +375,15 @@
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex justify-end space-x-2">
+                                    <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
+                                            hx-target="#project-properties-modal-content"
+                                            hx-trigger="click"
+                                            onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
+                                            class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Project Properties">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </button>
                                     <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
                                             hx-target="#m2-modal-content"
                                             hx-trigger="click"
@@ -367,7 +427,6 @@
             </div>
         </div>
 
-        </div>
     </main>
 
     <!-- Edit Workspace Modal -->
@@ -403,6 +462,18 @@
                 </form>
 
                 <div class="pt-6 border-t border-gray-100">
+                    <h4 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Actions</h4>
+                    <form th:action="@{/workspaces/{id}/duplicate(id=${workspace.id})}" method="POST">
+                        <button type="submit" class="w-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-bold py-3 rounded-xl transition-all border border-indigo-100 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                            </svg>
+                            Clone Workspace
+                        </button>
+                    </form>
+                </div>
+
+                <div class="pt-6 border-t border-gray-100">
                     <h4 class="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">Danger Zone</h4>
                     <form th:action="@{/workspaces/{id}/delete(id=${workspace.id})}" method="POST" onsubmit="return confirm('Are you sure you want to delete this workspace? This cannot be undone.');">
                         <button type="submit" class="w-full bg-red-50 text-red-600 hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
@@ -421,6 +492,51 @@
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Branch Modal -->
+    <div id="bulk-branch-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-800">Bulk Branch Checkout</h3>
+                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Change branch for selected repositories</p>
+                </div>
+                <button onclick="document.getElementById('bulk-branch-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <!-- Loading spinner inside modal -->
+                <div id="bulk-branch-loading" class="hidden py-12 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                    <p class="text-sm font-medium text-gray-500">Executing branch checkout...</p>
+                </div>
+                <div id="bulk-branch-form-container" class="space-y-6">
+                    <div class="space-y-4">
+                        <div>
+                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Branch Name</label>
+                             <input type="text" id="bulk-branch-name" required placeholder="main or feature/branch" 
+                                    class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm">
+                        </div>
+                        <div class="flex items-center">
+                             <input type="checkbox" id="bulk-branch-create" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                             <label for="bulk-branch-create" class="ml-2 text-xs font-bold text-gray-600 uppercase tracking-wider cursor-pointer">Create branch if it does not exist (-b)</label>
+                        </div>
+                    </div>
+                    <div class="flex space-x-3 pt-4 border-t border-gray-100">
+                         <button onclick="document.getElementById('bulk-branch-modal').classList.add('hidden')" class="flex-1 px-4 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-all text-sm text-center">
+                             Cancel
+                         </button>
+                         <button onclick="submitBulkBranch()" class="flex-1 px-4 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 text-sm text-center">
+                             Checkout Branch
+                         </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -462,6 +578,21 @@
         </div>
     </div>
 
+    <!-- Project Properties Modal -->
+    <div id="project-properties-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all overflow-hidden">
+            <div id="project-properties-modal-content">
+                <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Summary Toast Container -->
+    <div id="action-summary-container" class="fixed bottom-6 right-6 z-[80] flex flex-col space-y-4 max-w-md w-full"></div>
+
     <script th:inline="javascript">
         const workspaceId = [[${workspace.id}]];
         let socket = new SockJS('/ws-logs');
@@ -486,6 +617,11 @@
                 const failure = JSON.parse(message.body);
                 showRetryButton(failure);
             });
+
+            stompClient.subscribe('/topic/action-summary', function (message) {
+                const summary = JSON.parse(message.body);
+                showActionSummary(summary);
+            });
         });
 
         function showRetryButton(failure) {
@@ -500,6 +636,121 @@
                 retryContainer.classList.add('hidden');
                 executeBulkAction('build', failure.remainingProjectIds);
             };
+        }
+
+        function showActionSummary(summary) {
+            const container = document.getElementById('action-summary-container');
+            if (!container) return;
+
+            const toastId = 'toast-' + Date.now();
+            const toast = document.createElement('div');
+            toast.id = toastId;
+            toast.className = 'glass relative bg-white/95 border border-gray-100 rounded-2xl shadow-2xl p-5 flex flex-col space-y-3 overflow-hidden transition-all duration-500 ease-out transform translate-x-full opacity-0';
+            
+            const isBuild = summary.action === 'build';
+            const actionTitle = isBuild ? 'Build Workspace' : 'Git Pull Workspace';
+            const statusText = summary.success ? 'Success' : 'Failed';
+            
+            const iconBg = summary.success ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-red-50 text-red-600 border border-red-100';
+            const iconSvg = summary.success 
+                ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+
+            let contentHtml = '';
+            if (isBuild) {
+                if (summary.success) {
+                    contentHtml = `<p class="text-sm text-gray-600">All builds completed successfully!</p>`;
+                    if (summary.succeededProjects && summary.succeededProjects.length > 0) {
+                        contentHtml += `
+                            <div class="space-y-1">
+                                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Succeeded Projects (${summary.succeededProjects.length})</div>
+                                <div class="flex flex-wrap gap-1">
+                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                } else {
+                    contentHtml = `<p class="text-sm text-gray-600">Build failed at project <span class="font-bold text-red-600 underline">${summary.failedProject}</span>.</p>`;
+                    if (summary.succeededProjects && summary.succeededProjects.length > 0) {
+                        contentHtml += `
+                            <div class="space-y-1">
+                                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Succeeded Before Failure (${summary.succeededProjects.length})</div>
+                                <div class="flex flex-wrap gap-1">
+                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+            } else {
+                contentHtml = `<p class="text-sm text-gray-600">Git pull action finished.</p>`;
+                if (summary.changedProjects && summary.changedProjects.length > 0) {
+                    contentHtml += `
+                        <div class="space-y-1">
+                            <div class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center"><span class="w-1.5 h-1.5 bg-indigo-500 rounded-full mr-1.5"></span>Updated (${summary.changedProjects.length})</div>
+                            <div class="flex flex-wrap gap-1">
+                                ${summary.changedProjects.map(p => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                if (summary.noChangesProjects && summary.noChangesProjects.length > 0) {
+                    contentHtml += `
+                        <div class="space-y-1">
+                            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center"><span class="w-1.5 h-1.5 bg-gray-300 rounded-full mr-1.5"></span>Already Up to Date (${summary.noChangesProjects.length})</div>
+                            <div class="flex flex-wrap gap-1">
+                                ${summary.noChangesProjects.map(p => `<span class="px-2 py-0.5 bg-gray-50 text-gray-600 border border-gray-200 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            toast.innerHTML = `
+                <button onclick="closeToast('${toastId}')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 rounded-xl ${iconBg}">
+                        ${iconSvg}
+                    </div>
+                    <div>
+                        <h4 class="text-sm font-bold text-gray-800">${actionTitle}</h4>
+                        <p class="text-[10px] font-extrabold uppercase tracking-widest ${summary.success ? 'text-green-600' : 'text-red-600'}">${statusText}</p>
+                    </div>
+                </div>
+                <div class="space-y-3 pt-1">
+                    ${contentHtml}
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-x-full', 'opacity-0');
+                toast.classList.add('translate-x-0', 'opacity-100');
+            });
+
+
+        }
+
+        function closeToast(toastId) {
+            const toast = document.getElementById(toastId);
+            if (!toast) return;
+
+            if (toast.dataset.dismissTimeout) {
+                clearTimeout(parseInt(toast.dataset.dismissTimeout));
+            }
+
+            toast.classList.remove('translate-x-0', 'opacity-100');
+            toast.classList.add('translate-x-full', 'opacity-0');
+
+            setTimeout(() => {
+                toast.remove();
+            }, 500);
         }
 
         function updateProcessInfo(pid, active) {
@@ -704,6 +955,10 @@
                 return;
             }
 
+            if (action === 'checkout-discard' && !confirm('Are you sure you want to discard all local unstaged changes in the selected projects? This cannot be undone.')) {
+                return;
+            }
+
             if (action === 'build') {
                 clearLogs();
                 document.getElementById('retry-container').classList.add('hidden');
@@ -747,6 +1002,72 @@
             });
         }
 
+        function openBulkBranchModal() {
+            const checkboxes = document.getElementsByName('project-checkbox');
+            let checkedCount = 0;
+            for(let i=0, n=checkboxes.length; i<n; i++) {
+                if(checkboxes[i].checked) checkedCount++;
+            }
+            if (checkedCount === 0) {
+                alert('Please select at least one project.');
+                return;
+            }
+            document.getElementById('bulk-branch-name').value = '';
+            document.getElementById('bulk-branch-create').checked = false;
+            document.getElementById('bulk-branch-loading').classList.add('hidden');
+            document.getElementById('bulk-branch-form-container').classList.remove('hidden');
+            document.getElementById('bulk-branch-modal').classList.remove('hidden');
+        }
+
+        function submitBulkBranch() {
+            const branch = document.getElementById('bulk-branch-name').value.trim();
+            if (!branch) {
+                alert('Please enter a branch name.');
+                return;
+            }
+            const createNew = document.getElementById('bulk-branch-create').checked;
+            
+            const checkboxes = document.getElementsByName('project-checkbox');
+            const selectedIds = [];
+            for(let i=0, n=checkboxes.length; i<n; i++) {
+                if(checkboxes[i].checked) selectedIds.push(checkboxes[i].value);
+            }
+            
+            if (selectedIds.length === 0) {
+                alert('Please select at least one project.');
+                return;
+            }
+            
+            // Show loading spinner
+            document.getElementById('bulk-branch-form-container').classList.add('hidden');
+            document.getElementById('bulk-branch-loading').classList.remove('hidden');
+            
+            const formData = new FormData();
+            formData.append('branch', branch);
+            formData.append('createNew', createNew);
+            selectedIds.forEach(id => formData.append('projectIds', id));
+            
+            fetch(`/workspaces/${workspaceId}/bulk-checkout`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    response.text().then(text => {
+                        alert(text || 'Error switching branches.');
+                        // Reset view
+                        document.getElementById('bulk-branch-loading').classList.add('hidden');
+                        document.getElementById('bulk-branch-form-container').classList.remove('hidden');
+                    });
+                }
+            }).catch(err => {
+                alert('Network error: ' + err.message);
+                document.getElementById('bulk-branch-loading').classList.add('hidden');
+                document.getElementById('bulk-branch-form-container').classList.remove('hidden');
+            });
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const branchModal = document.getElementById('branch-modal');
@@ -755,12 +1076,16 @@
             const explorerModal = document.getElementById('explorer-modal');
             const childrenModal = document.getElementById('children-modal');
             const profileModal = document.getElementById('profile-manager-modal');
+            const projectPropertiesModal = document.getElementById('project-properties-modal');
+            const bulkBranchModal = document.getElementById('bulk-branch-modal');
             if (event.target == branchModal) branchModal.classList.add('hidden');
             if (event.target == editModal) editModal.classList.add('hidden');
             if (event.target == m2Modal) m2Modal.classList.add('hidden');
             if (event.target == explorerModal) explorerModal.classList.add('hidden');
             if (event.target == childrenModal) childrenModal.classList.add('hidden');
             if (event.target == profileModal) profileModal.classList.add('hidden');
+            if (event.target == projectPropertiesModal) projectPropertiesModal.classList.add('hidden');
+            if (event.target == bulkBranchModal) bulkBranchModal.classList.add('hidden');
         }
 
         // SortableJS init

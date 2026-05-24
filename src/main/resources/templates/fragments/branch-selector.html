@@ -25,7 +25,7 @@
                     <button th:each="branch : ${branches}" 
                             th:attr="hx-post=@{/projects/{id}/checkout(id=${project.id}, branch=${branch})}"
                             hx-swap="none"
-                            hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error switching branch. Check logs for details.'); window.location.reload(); }"
+                            hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error switching branch:\n' + event.detail.xhr.responseText); window.location.reload(); }"
                             onclick="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
                             th:class="${branch == currentBranch ? 'w-full text-left px-4 py-3 text-sm font-bold text-indigo-600 bg-indigo-50 rounded-xl flex items-center justify-between' : 'w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100'}"
                             th:text="${branch}">
@@ -40,7 +40,7 @@
             <div class="pt-6 border-t border-gray-100">
                 <form th:attr="hx-post=@{/projects/{id}/create-branch(id=${project.id})}"
                       hx-swap="none"
-                      hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error creating branch. Check logs for details.'); window.location.reload(); }"
+                      hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error creating branch:\n' + event.detail.xhr.responseText); window.location.reload(); }"
                       onsubmit="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
                       class="space-y-3">
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Create New Branch</label>

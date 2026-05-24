@@ -33,6 +33,12 @@ public class WorkspaceController {
     private final GitService gitService;
     private final MavenRepositoryService mavenRepositoryService;
     private final FileSystemService fileSystemService;
+    private final MavenService mavenService;
+
+    @ModelAttribute("availableGroupIds")
+    public List<String> getAvailableGroupIds() {
+        return mavenRepositoryService.getM2TopLevelFolders();
+    }
 
     /**
      * Renders the home page with all workspaces and available group IDs.
@@ -43,7 +49,6 @@ public class WorkspaceController {
     @GetMapping
     public String index(final Model model) {
         model.addAttribute("workspaces", workspaceService.getAllWorkspaces());
-        model.addAttribute("availableGroupIds", mavenRepositoryService.getM2TopLevelFolders());
         return "index";
     }
 
@@ -94,12 +99,12 @@ public class WorkspaceController {
      * Duplicates a workspace.
      * 
      * @param id The workspace ID.
-     * @return Redirect to home.
+     * @return Redirect to the new cloned workspace.
      */
     @PostMapping("/workspaces/{id}/duplicate")
     public String duplicateWorkspace(final @PathVariable Long id) {
-        workspaceService.duplicateWorkspace(id);
-        return "redirect:/";
+        final Workspace copy = workspaceService.duplicateWorkspace(id);
+        return "redirect:/workspaces/" + copy.getId();
     }
 
     /**
@@ -201,7 +206,14 @@ public class WorkspaceController {
     @ResponseBody
     public void bulkAction(final @PathVariable Long id, final @RequestParam List<Long> projectIds,
             final @RequestParam String action) {
-        final List<MavenProject> projects = mavenProjectRepository.findAllById(projectIds);
+        final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
+        final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
+                .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
+        final List<MavenProject> projects = projectIds.stream()
+                .map(projectMap::get)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toList());
+
         switch (action) {
             case "build":
                 buildService.buildProjectsSequentially(projects);
@@ -212,10 +224,88 @@ public class WorkspaceController {
             case "pull":
                 buildService.bulkGitPull(projects);
                 break;
+            case "checkout-discard":
+                buildService.bulkGitDiscard(projects);
+                break;
+            case "restore-staged":
+                buildService.bulkGitUnstage(projects);
+                break;
             default:
                 log.warn("Unknown bulk action: {}", action);
                 break;
         }
+    }
+
+    /**
+     * Exports the projects in execution order as a text file.
+     * 
+     * @param id The workspace ID.
+     * @return A plain text response containing project artifact IDs.
+     */
+    @GetMapping("/workspaces/{id}/export-order")
+    public ResponseEntity<String> exportOrder(final @PathVariable Long id) {
+        final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(id, true);
+        final StringBuilder sb = new StringBuilder();
+        for (final MavenProject project : projects) {
+            sb.append(project.getArtifactId()).append("\n");
+        }
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"build-order-" + id + ".txt\"")
+                .contentType(org.springframework.http.MediaType.TEXT_PLAIN)
+                .body(sb.toString());
+    }
+
+    /**
+     * Executes bulk branch checkout/creation on multiple projects.
+     * 
+     * @param id         The workspace ID.
+     * @param projectIds The list of project IDs.
+     * @param branch     The target branch name.
+     * @param createNew  Whether to create the branch if it doesn't exist (-b).
+     * @return A success message.
+     */
+    @PostMapping("/workspaces/{id}/bulk-checkout")
+    @ResponseBody
+    public ResponseEntity<String> bulkCheckout(
+            final @PathVariable Long id,
+            final @RequestParam List<Long> projectIds,
+            final @RequestParam String branch,
+            final @RequestParam(required = false, defaultValue = "false") boolean createNew) {
+        log.info("Bulk checkout to branch '{}' (create: {}) for workspace {}, project IDs: {}", branch, createNew, id, projectIds);
+        
+        final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
+        final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
+                .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
+        final List<MavenProject> projects = projectIds.stream()
+                .map(projectMap::get)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toList());
+
+        final List<String> succeeded = new java.util.ArrayList<>();
+        final List<String> failed = new java.util.ArrayList<>();
+
+        for (final MavenProject project : projects) {
+            if (!project.isEnabled()) continue;
+            final File projectDir = new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
+            try {
+                if (createNew) {
+                    gitService.createBranch(projectDir, branch);
+                } else {
+                    gitService.checkoutBranch(projectDir, branch);
+                }
+                project.setGitBranch(branch);
+                mavenProjectRepository.save(project);
+                succeeded.add(project.getArtifactId());
+            } catch (final Exception e) {
+                log.error("Failed bulk checkout for project '{}': {}", project.getArtifactId(), e.getMessage());
+                failed.add(project.getArtifactId() + " (" + e.getMessage() + ")");
+            }
+        }
+
+        if (!failed.isEmpty()) {
+            return ResponseEntity.badRequest().body("Failed for: " + String.join(", ", failed));
+        }
+        return ResponseEntity.ok("Success");
     }
 
     /**
@@ -304,12 +394,15 @@ public class WorkspaceController {
         final Workspace workspace = project.getWorkspace();
         final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
 
-        if (gitService.checkoutBranch(projectDir, branch)) {
+        try {
+            gitService.checkoutBranch(projectDir, branch);
             project.setGitBranch(branch);
             mavenProjectRepository.save(project);
             return ResponseEntity.ok("Success");
+        } catch (final Exception e) {
+            log.error("Failed to checkout branch: {}", e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
         }
-        return ResponseEntity.internalServerError().body("Failed to checkout branch. Check logs.");
     }
 
     /**
@@ -327,12 +420,15 @@ public class WorkspaceController {
         final Workspace workspace = project.getWorkspace();
         final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
 
-        if (gitService.createBranch(projectDir, branch)) {
+        try {
+            gitService.createBranch(projectDir, branch);
             project.setGitBranch(branch);
             mavenProjectRepository.save(project);
             return ResponseEntity.ok("Success");
+        } catch (final Exception e) {
+            log.error("Failed to create branch: {}", e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
         }
-        return ResponseEntity.internalServerError().body("Failed to create branch. Check logs.");
     }
 
     /**
@@ -488,5 +584,97 @@ public class WorkspaceController {
             workspaceService.addProjectByPath(id, path);
         }
         return ResponseEntity.ok("Projects added");
+    }
+
+    public static class KeyPropertyInfo {
+        private final String key;
+        private final String label;
+        private final String category;
+        private String value;
+        private String source; // "project", "parent", or null
+
+        public KeyPropertyInfo(String key, String label, String category) {
+            this.key = key;
+            this.label = label;
+            this.category = category;
+        }
+
+        public String getKey() { return key; }
+        public String getLabel() { return label; }
+        public String getCategory() { return category; }
+        public String getValue() { return value; }
+        public void setValue(String value) { this.value = value; }
+        public String getSource() { return source; }
+        public void setSource(String source) { this.source = source; }
+    }
+
+    private static final List<KeyPropertyInfo> KEY_PROPERTY_BLUEPRINTS = List.of(
+        new KeyPropertyInfo("revision", "Revision", "Build & Compiler"),
+        new KeyPropertyInfo("project.build.sourceEncoding", "Encoding", "Build & Compiler"),
+        new KeyPropertyInfo("maven.compiler.source", "Compiler Source", "Build & Compiler"),
+        new KeyPropertyInfo("maven.compiler.target", "Compiler Target", "Build & Compiler"),
+        new KeyPropertyInfo("lombok.version", "Lombok", "Logging & Utils"),
+        new KeyPropertyInfo("slf4j.version", "SLF4J", "Logging & Utils"),
+        new KeyPropertyInfo("logback.version", "Logback", "Logging & Utils"),
+        new KeyPropertyInfo("guava.version", "Guava", "Logging & Utils"),
+        new KeyPropertyInfo("gson.version", "Gson", "Logging & Utils"),
+        new KeyPropertyInfo("jackson.version", "Jackson Version", "Jackson JSON"),
+        new KeyPropertyInfo("jackson.annotations.version", "Jackson Annotations", "Jackson JSON"),
+        new KeyPropertyInfo("weblogic.thint3client.version", "WebLogic Thin T3 Client", "WebLogic Clients"),
+        new KeyPropertyInfo("weblogic.webservicesclient.version", "WebLogic Web Services Client", "WebLogic Clients")
+    );
+
+    /**
+     * Retrieves all properties for a project, including resolved key properties,
+     * project-level properties, and parent-level properties.
+     * 
+     * @param id    The project ID.
+     * @param model The UI model.
+     * @return The project properties fragment.
+     */
+    @GetMapping("/projects/{id}/properties")
+    public String getProjectProperties(final @PathVariable Long id, final Model model) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final java.util.Properties projectProps = mavenService.getProjectProperties(project);
+        final java.util.Properties parentProps = project.getParentKey() != null 
+                ? mavenService.getParentPomProperties(project) 
+                : new java.util.Properties();
+
+        final List<KeyPropertyInfo> resolvedKeyProperties = new java.util.ArrayList<>();
+        for (final KeyPropertyInfo blueprint : KEY_PROPERTY_BLUEPRINTS) {
+            final KeyPropertyInfo resolved = new KeyPropertyInfo(blueprint.getKey(), blueprint.getLabel(), blueprint.getCategory());
+            if (projectProps.containsKey(blueprint.getKey())) {
+                resolved.setValue(projectProps.getProperty(blueprint.getKey()));
+                resolved.setSource("project");
+            } else if (parentProps.containsKey(blueprint.getKey())) {
+                resolved.setValue(parentProps.getProperty(blueprint.getKey()));
+                resolved.setSource("parent");
+            } else {
+                resolved.setValue("Not defined");
+                resolved.setSource(null);
+            }
+            resolvedKeyProperties.add(resolved);
+        }
+
+        final java.util.Map<String, List<KeyPropertyInfo>> groupedKeyProperties = resolvedKeyProperties.stream()
+                .collect(java.util.stream.Collectors.groupingBy(KeyPropertyInfo::getCategory, 
+                        java.util.LinkedHashMap::new, 
+                        java.util.stream.Collectors.toList()));
+
+        final List<java.util.Map.Entry<Object, Object>> sortedProjectProps = projectProps.entrySet().stream()
+                .sorted(java.util.Comparator.comparing(e -> e.getKey().toString().toLowerCase()))
+                .collect(java.util.stream.Collectors.toList());
+
+        final List<java.util.Map.Entry<Object, Object>> sortedParentProps = parentProps.entrySet().stream()
+                .sorted(java.util.Comparator.comparing(e -> e.getKey().toString().toLowerCase()))
+                .collect(java.util.stream.Collectors.toList());
+
+        model.addAttribute("project", project);
+        model.addAttribute("groupedKeyProperties", groupedKeyProperties);
+        model.addAttribute("projectProperties", sortedProjectProps);
+        model.addAttribute("parentProperties", sortedParentProps);
+        model.addAttribute("parentKey", project.getParentKey());
+        
+        return "fragments/project-properties :: project-properties-list";
     }
 }

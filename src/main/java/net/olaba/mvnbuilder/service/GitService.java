@@ -130,7 +130,7 @@ public class GitService {
             if (!finished) {
                 log.error("Git command timed out: {}", command);
                 process.destroyForcibly();
-                return false;
+                throw new RuntimeException("Git command timed out: " + String.join(" ", command));
             }
             
             // Wait a bit for the output reader to finish
@@ -142,16 +142,20 @@ public class GitService {
             
             final int exitCode = process.exitValue();
             if (exitCode != 0) {
+                final String errMsg = output.toString().trim();
                 log.error("Git command failed: {}. Exit code: {}. Output: {}", 
-                        command, exitCode, output.toString());
-                return false;
+                        command, exitCode, errMsg);
+                throw new RuntimeException(errMsg.isEmpty() ? "Git command failed with exit code " + exitCode : errMsg);
             }
             
             log.info("Git command successful: {}", command);
             return true;
         } catch (final Exception e) {
             log.error("Exception during git command: {}", e.getMessage(), e);
-            return false;
+            if (e instanceof RuntimeException) {
+                throw (RuntimeException) e;
+            }
+            throw new RuntimeException("Failed to execute git: " + e.getMessage(), e);
         }
     }
 }

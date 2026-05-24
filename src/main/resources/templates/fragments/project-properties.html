@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="project-properties-list" class="flex flex-col animate-in fade-in zoom-in duration-200" id="project-properties-modal-content-inner">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <div>
+            <h3 class="text-lg font-bold text-gray-800" th:text="${project.artifactId}">Artifact ID</h3>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                <span th:text="${project.groupId}">group.id</span> &bull; Version: <span th:text="${project.version}">1.0.0</span>
+            </p>
+        </div>
+        <button onclick="document.getElementById('project-properties-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Tabs Navigation -->
+    <div class="border-b border-gray-100 flex space-x-6 px-6 bg-gray-50/50">
+        <button onclick="switchPropertiesTab('summary')" id="tab-summary-btn" class="py-3 px-1 border-b-2 text-sm font-semibold transition-all border-indigo-600 text-indigo-600 focus:outline-none">
+            Summary
+        </button>
+        <button onclick="switchPropertiesTab('project')" id="tab-project-btn" class="py-3 px-1 border-b-2 text-sm font-semibold transition-all border-transparent text-gray-500 hover:text-gray-700 focus:outline-none">
+            Project POM
+        </button>
+        <button th:if="${parentKey != null}" onclick="switchPropertiesTab('parent')" id="tab-parent-btn" class="py-3 px-1 border-b-2 text-sm font-semibold transition-all border-transparent text-gray-500 hover:text-gray-700 focus:outline-none">
+            Parent POM
+        </button>
+    </div>
+
+    <!-- Content panels container -->
+    <div class="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+        
+        <!-- SUMMARY PANEL -->
+        <div id="panel-summary" class="space-y-6">
+            <div th:each="categoryGroup : ${groupedKeyProperties}" class="space-y-3">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 pb-1" th:text="${categoryGroup.key}">Category</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div th:each="prop : ${categoryGroup.value}" class="bg-gray-50/50 hover:bg-gray-50 border border-gray-200/60 rounded-xl p-3.5 flex flex-col justify-between transition-all group/card relative">
+                        <div>
+                            <div class="text-xs font-bold text-gray-700" th:text="${prop.label}">Label</div>
+                            <div class="text-[9px] text-gray-400 font-mono break-all mt-0.5" th:text="${prop.key}">property.key</div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between">
+                            <span class="text-xs font-semibold text-gray-800 font-mono break-all pr-12 select-all" th:text="${prop.value}">value</span>
+                            <div class="flex items-center space-x-1.5 shrink-0">
+                                <!-- Source badges -->
+                                <span th:if="${prop.source == 'project'}" class="px-1.5 py-0.5 text-[8px] font-bold bg-green-50 text-green-700 border border-green-200 rounded uppercase tracking-wider">Project</span>
+                                <span th:if="${prop.source == 'parent'}" class="px-1.5 py-0.5 text-[8px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded uppercase tracking-wider">Parent</span>
+                                <span th:if="${prop.source == null}" class="px-1.5 py-0.5 text-[8px] font-bold bg-gray-100 text-gray-400 border border-gray-200 rounded uppercase tracking-wider">Empty</span>
+                                
+                                <button th:if="${prop.source != null}" onclick="copyPropValue(this)" class="p-1 bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 rounded-md shadow-sm transition-all focus:opacity-100 opacity-0 group-hover/card:opacity-100" title="Copy value">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PROJECT POM PANEL -->
+        <div id="panel-project" class="hidden space-y-4">
+            <!-- Search bar -->
+            <div class="relative">
+                <input type="text" id="project-prop-search" onkeyup="filterTableProperties('project')" placeholder="Search project properties..." 
+                       class="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <svg class="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="border border-gray-100 rounded-xl overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-100 table-fixed" id="project-properties-table">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="w-1/2 px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Key</th>
+                            <th scope="col" class="w-1/2 px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-100">
+                        <tr th:each="prop : ${projectProperties}" class="hover:bg-gray-50/50 transition-colors prop-row">
+                            <td class="px-4 py-2.5 text-xs font-semibold text-gray-800 break-all font-mono select-all prop-key" th:text="${prop.key}">key</td>
+                            <td class="px-4 py-2.5 text-xs text-gray-600 font-mono break-all relative pr-10 group select-all">
+                                <span class="prop-val" th:text="${prop.value}">value</span>
+                                <button onclick="copyPropValue(this)" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 rounded-lg opacity-0 group-hover:opacity-100 hover:border-indigo-100 shadow-sm transition-all focus:opacity-100" title="Copy to clipboard">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr th:if="${projectProperties.empty}" class="no-props-row">
+                            <td colspan="2" class="px-4 py-8 text-center text-xs text-gray-400">
+                                No properties defined directly in this project's POM.
+                            </td>
+                        </tr>
+                        <tr id="project-no-search-results" class="hidden">
+                            <td colspan="2" class="px-4 py-8 text-center text-xs text-gray-400">
+                                No matching properties found.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- PARENT POM PANEL -->
+        <div th:if="${parentKey != null}" id="panel-parent" class="hidden space-y-4">
+            <!-- Search bar -->
+            <div class="relative">
+                <input type="text" id="parent-prop-search" onkeyup="filterTableProperties('parent')" placeholder="Search parent properties..." 
+                       class="w-full pl-10 pr-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <svg class="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="border border-gray-100 rounded-xl overflow-hidden">
+                <table class="min-w-full divide-y divide-gray-100 table-fixed" id="parent-properties-table">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="w-1/2 px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Key</th>
+                            <th scope="col" class="w-1/2 px-4 py-2.5 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-100">
+                        <tr th:each="prop : ${parentProperties}" class="hover:bg-gray-50/50 transition-colors prop-row">
+                            <td class="px-4 py-2.5 text-xs font-semibold text-gray-800 break-all font-mono select-all prop-key" th:text="${prop.key}">key</td>
+                            <td class="px-4 py-2.5 text-xs text-gray-600 font-mono break-all relative pr-10 group select-all">
+                                <span class="prop-val" th:text="${prop.value}">value</span>
+                                <button onclick="copyPropValue(this)" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 rounded-lg opacity-0 group-hover:opacity-100 hover:border-indigo-100 shadow-sm transition-all focus:opacity-100" title="Copy to clipboard">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr th:if="${parentProperties.empty}" class="no-props-row">
+                            <td colspan="2" class="px-4 py-8 text-center text-xs text-gray-400">
+                                No properties found in the parent POM.
+                            </td>
+                        </tr>
+                        <tr id="parent-no-search-results" class="hidden">
+                            <td colspan="2" class="px-4 py-8 text-center text-xs text-gray-400">
+                                No matching properties found.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Client-side Scripts -->
+    <script>
+        function switchPropertiesTab(tabName) {
+            // Panels
+            const summaryPanel = document.getElementById('panel-summary');
+            const projectPanel = document.getElementById('panel-project');
+            const parentPanel = document.getElementById('panel-parent');
+            
+            // Buttons
+            const summaryBtn = document.getElementById('tab-summary-btn');
+            const projectBtn = document.getElementById('tab-project-btn');
+            const parentBtn = document.getElementById('tab-parent-btn');
+
+            // Hide all panels
+            if (summaryPanel) summaryPanel.classList.add('hidden');
+            if (projectPanel) projectPanel.classList.add('hidden');
+            if (parentPanel) parentPanel.classList.add('hidden');
+
+            // Reset all buttons styling
+            const inactiveClasses = ['border-transparent', 'text-gray-500', 'hover:text-gray-700'];
+            const activeClasses = ['border-indigo-600', 'text-indigo-600'];
+
+            [summaryBtn, projectBtn, parentBtn].forEach(btn => {
+                if (btn) {
+                    btn.classList.remove(...activeClasses);
+                    btn.classList.add(...inactiveClasses);
+                }
+            });
+
+            // Show active panel & button styling
+            if (tabName === 'summary' && summaryPanel) {
+                summaryPanel.classList.remove('hidden');
+                summaryBtn.classList.remove(...inactiveClasses);
+                summaryBtn.classList.add(...activeClasses);
+            } else if (tabName === 'project' && projectPanel) {
+                projectPanel.classList.remove('hidden');
+                projectBtn.classList.remove(...inactiveClasses);
+                projectBtn.classList.add(...activeClasses);
+            } else if (tabName === 'parent' && parentPanel) {
+                parentPanel.classList.remove('hidden');
+                parentBtn.classList.remove(...inactiveClasses);
+                parentBtn.classList.add(...activeClasses);
+            }
+        }
+
+        function filterTableProperties(type) {
+            const input = document.getElementById(type + '-prop-search');
+            const filter = input.value.toLowerCase();
+            const table = document.getElementById(type + '-properties-table');
+            const rows = table.getElementsByClassName('prop-row');
+            let hasResults = false;
+
+            for (let i = 0; i < rows.length; i++) {
+                const keyCell = rows[i].getElementsByClassName('prop-key')[0];
+                const valCell = rows[i].getElementsByClassName('prop-val')[0];
+                if (keyCell && valCell) {
+                    const keyText = keyCell.textContent || keyCell.innerText;
+                    const valText = valCell.textContent || valCell.innerText;
+                    if (keyText.toLowerCase().indexOf(filter) > -1 || valText.toLowerCase().indexOf(filter) > -1) {
+                        rows[i].classList.remove('hidden');
+                        hasResults = true;
+                    } else {
+                        rows[i].classList.add('hidden');
+                    }
+                }
+            }
+
+            const noResultsRow = document.getElementById(type + '-no-search-results');
+            if (hasResults) {
+                noResultsRow.classList.add('hidden');
+            } else {
+                noResultsRow.classList.remove('hidden');
+            }
+        }
+
+        function copyPropValue(button) {
+            let textElement = button.previousElementSibling;
+            if (!textElement) {
+                textElement = button.closest('.relative, .flex').querySelector('.prop-val, span:first-child');
+            }
+            if (!textElement) return;
+
+            const text = textElement.textContent || textElement.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const originalSvg = button.innerHTML;
+                button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
+                button.classList.add('border-green-200', 'bg-green-50');
+                setTimeout(() => {
+                    button.innerHTML = originalSvg;
+                    button.classList.remove('border-green-200', 'bg-green-50');
+                }, 2000);
+            }).catch(err => {
+                console.error('Could not copy text: ', err);
+            });
+        }
+    </script>
+</div>
+</body>
+</html>

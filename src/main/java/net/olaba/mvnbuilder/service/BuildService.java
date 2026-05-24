@@ -3,6 +3,8 @@ package net.olaba.mvnbuilder.service;
 import net.olaba.mvnbuilder.entities.MavenProject;
 import net.olaba.mvnbuilder.model.BuildFailure;
 import net.olaba.mvnbuilder.model.LogMessage;
+import net.olaba.mvnbuilder.model.CommandResult;
+import net.olaba.mvnbuilder.model.ActionSummary;
 
 import net.olaba.mvnbuilder.repository.BuildProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +64,16 @@ public class BuildService {
         final String[] fullCmd = new String[args.length + 1];
         fullCmd[0] = getMvnCommand();
         System.arraycopy(args, 0, fullCmd, 1, args.length);
-        processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd);
+        processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd)
+                .thenAccept(result -> {
+                    final ActionSummary summary = ActionSummary.builder()
+                            .withAction("build")
+                            .withSuccess(result.getExitCode() == 0)
+                            .withFailedProject(result.getExitCode() == 0 ? null : project.getArtifactId())
+                            .withSucceededProjects(result.getExitCode() == 0 ? List.of(project.getArtifactId()) : List.of())
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                });
     }
 
     /**
@@ -72,6 +83,8 @@ public class BuildService {
      */
     public void buildProjectsSequentially(final List<MavenProject> projects) {
         CompletableFuture<Integer> future = CompletableFuture.completedFuture(0);
+        final List<String> succeeded = new java.util.ArrayList<>();
+
         for (int i = 0; i < projects.size(); i++) {
             final int currentIndex = i;
             final MavenProject project = projects.get(i);
@@ -95,7 +108,8 @@ public class BuildService {
                 System.arraycopy(args, 0, fullCmd, 1, args.length);
 
                 return processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd)
-                        .thenApply(resultExitCode -> {
+                        .thenApply(result -> {
+                            final int resultExitCode = result.getExitCode();
                             if (resultExitCode != 0) {
                                 // Notify failure and provide remaining projects for retry
                                 final List<Long> remainingIds = projects.subList(currentIndex, projects.size()).stream()
@@ -106,11 +120,34 @@ public class BuildService {
                                         project.getArtifactId(),
                                         project.getId(),
                                         remainingIds));
+
+                                // Send ActionSummary with error
+                                final ActionSummary summary = ActionSummary.builder()
+                                        .withAction("build")
+                                        .withSuccess(false)
+                                        .withFailedProject(project.getArtifactId())
+                                        .withSucceededProjects(new java.util.ArrayList<>(succeeded))
+                                        .build();
+                                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                            } else {
+                                succeeded.add(project.getArtifactId());
                             }
                             return resultExitCode;
                         });
             });
         }
+
+        future.thenAccept(exitCode -> {
+            if (exitCode == 0) {
+                // All succeeded!
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("build")
+                        .withSuccess(true)
+                        .withSucceededProjects(succeeded)
+                        .build();
+                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+            }
+        });
     }
 
     /**
@@ -130,7 +167,14 @@ public class BuildService {
      */
     public void gitFetch(final MavenProject project) {
         final File projectDir = getProjectDir(project);
-        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch");
+        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch")
+                .thenAccept(result -> {
+                    final ActionSummary summary = ActionSummary.builder()
+                            .withAction("git-fetch")
+                            .withSuccess(result.getExitCode() == 0)
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                });
     }
 
     /**
@@ -140,7 +184,30 @@ public class BuildService {
      */
     public void gitPull(final MavenProject project) {
         final File projectDir = getProjectDir(project);
-        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull");
+        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
+                .thenAccept(result -> {
+                    boolean hasChanges = true;
+                    for (final String line : result.getOutput()) {
+                        if (line.contains("Already up to date") || line.contains("Ya al día") || line.contains("up-to-date")) {
+                            hasChanges = false;
+                            break;
+                        }
+                    }
+                    final List<String> changed = new java.util.ArrayList<>();
+                    final List<String> noChanges = new java.util.ArrayList<>();
+                    if (hasChanges && result.getExitCode() == 0) {
+                        changed.add(project.getArtifactId());
+                    } else {
+                        noChanges.add(project.getArtifactId());
+                    }
+                    final ActionSummary summary = ActionSummary.builder()
+                            .withAction("git-pull")
+                            .withSuccess(result.getExitCode() == 0)
+                            .withChangedProjects(changed)
+                            .withNoChangesProjects(noChanges)
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                });
     }
 
     /**
@@ -149,9 +216,22 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitFetch(final List<MavenProject> projects) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
         for (final MavenProject project : projects) {
-            gitFetch(project);
+            if (!project.isEnabled()) continue;
+            final File projectDir = getProjectDir(project);
+            future = future.thenCompose(v -> 
+                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch")
+                    .thenAccept(res -> {})
+            );
         }
+        future.thenRun(() -> {
+            final ActionSummary summary = ActionSummary.builder()
+                    .withAction("git-fetch")
+                    .withSuccess(true)
+                    .build();
+            messagingTemplate.convertAndSend("/topic/action-summary", summary);
+        });
     }
 
     /**
@@ -160,9 +240,123 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitPull(final List<MavenProject> projects) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        final List<String> changed = new java.util.ArrayList<>();
+        final List<String> noChanges = new java.util.ArrayList<>();
+        
         for (final MavenProject project : projects) {
-            gitPull(project);
+            if (!project.isEnabled()) continue;
+            final File projectDir = getProjectDir(project);
+            future = future.thenCompose(v -> 
+                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
+                    .thenAccept(result -> {
+                        boolean hasChanges = true;
+                        for (final String line : result.getOutput()) {
+                            if (line.contains("Already up to date") || line.contains("Ya al día") || line.contains("up-to-date")) {
+                                hasChanges = false;
+                                break;
+                            }
+                        }
+                        if (hasChanges && result.getExitCode() == 0) {
+                            changed.add(project.getArtifactId());
+                        } else {
+                            noChanges.add(project.getArtifactId());
+                        }
+                    })
+            );
         }
+        
+        future.thenRun(() -> {
+            final ActionSummary summary = ActionSummary.builder()
+                    .withAction("git-pull")
+                    .withSuccess(true)
+                    .withChangedProjects(changed)
+                    .withNoChangesProjects(noChanges)
+                    .build();
+            messagingTemplate.convertAndSend("/topic/action-summary", summary);
+        });
+    }
+
+    /**
+     * Performs a 'git checkout -- .' on a project to discard local unstaged changes.
+     * 
+     * @param project The project.
+     */
+    public void gitDiscard(final MavenProject project) {
+        final File projectDir = getProjectDir(project);
+        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "checkout", "--", ".")
+                .thenAccept(result -> {
+                    final ActionSummary summary = ActionSummary.builder()
+                            .withAction("git-discard")
+                            .withSuccess(result.getExitCode() == 0)
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                });
+    }
+
+    /**
+     * Performs a 'git restore --staged .' on a project to unstage staged changes.
+     * 
+     * @param project The project.
+     */
+    public void gitUnstage(final MavenProject project) {
+        final File projectDir = getProjectDir(project);
+        processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "restore", "--staged", ".")
+                .thenAccept(result -> {
+                    final ActionSummary summary = ActionSummary.builder()
+                            .withAction("git-unstage")
+                            .withSuccess(result.getExitCode() == 0)
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                });
+    }
+
+    /**
+     * Performs a bulk 'git checkout -- .' on multiple projects.
+     * 
+     * @param projects The list of projects.
+     */
+    public void bulkGitDiscard(final List<MavenProject> projects) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        for (final MavenProject project : projects) {
+            if (!project.isEnabled()) continue;
+            final File projectDir = getProjectDir(project);
+            future = future.thenCompose(v -> 
+                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "checkout", "--", ".")
+                    .thenAccept(res -> {})
+            );
+        }
+        future.thenRun(() -> {
+            final ActionSummary summary = ActionSummary.builder()
+                    .withAction("git-discard")
+                    .withSuccess(true)
+                    .build();
+            messagingTemplate.convertAndSend("/topic/action-summary", summary);
+        });
+    }
+
+    /**
+     * Performs a bulk 'git restore --staged .' on multiple projects.
+     * 
+     * @param projects The list of projects.
+     */
+    public void bulkGitUnstage(final List<MavenProject> projects) {
+        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        for (final MavenProject project : projects) {
+            if (!project.isEnabled()) continue;
+            final File projectDir = getProjectDir(project);
+            future = future.thenCompose(v -> 
+                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "restore", "--staged", ".")
+                    .thenAccept(res -> {})
+            );
+        }
+        future.thenRun(() -> {
+            final ActionSummary summary = ActionSummary.builder()
+                    .withAction("git-unstage")
+                    .withSuccess(true)
+                    .build();
+            messagingTemplate.convertAndSend("/topic/action-summary", summary);
+        });
     }
 
     /**

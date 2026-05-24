@@ -1,5 +1,11 @@
 package net.olaba.mvnbuilder;
 
+import net.olaba.mvnbuilder.model.BuildFailure;
+import net.olaba.mvnbuilder.model.LogMessage;
+import net.olaba.mvnbuilder.model.M2ProjectInfo;
+import net.olaba.mvnbuilder.model.ProcessInfo;
+import net.olaba.mvnbuilder.service.FileSystemService;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -9,6 +15,13 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @SpringBootApplication
 @EnableAsync
+@RegisterReflectionForBinding({
+    FileSystemService.FileItem.class,
+    M2ProjectInfo.class,
+    BuildFailure.class,
+    LogMessage.class,
+    ProcessInfo.class
+})
 public class MvnBuilderApplication {
 
     /**

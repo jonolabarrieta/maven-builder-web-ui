@@ -218,6 +218,43 @@ public class WorkspaceService {
                 importProject(workspace, pomFile);
             }
         }
+
+        // Scan manually added parent projects that reside outside the base path
+        final List<MavenProject> currentProjects = mavenProjectRepository
+                .findByWorkspaceIdOrderByExecutionOrderAsc(workspace.getId());
+        
+        final String baseAbsNormalized;
+        try {
+            baseAbsNormalized = baseDir.getAbsoluteFile().toPath().normalize().toString();
+        } catch (final Exception e) {
+            return;
+        }
+
+        final List<MavenProject> externalParents = currentProjects.stream()
+                .filter(p -> isParentProject(p, currentProjects))
+                .filter(p -> {
+                    if (p.getAbsolutePath() == null) {
+                        return false;
+                    }
+                    try {
+                        final String pAbsNormalized = new File(p.getAbsolutePath()).getAbsoluteFile().toPath().normalize().toString();
+                        return !pAbsNormalized.startsWith(baseAbsNormalized);
+                    } catch (final Exception e) {
+                        return true;
+                    }
+                })
+                .collect(Collectors.toList());
+
+        for (final MavenProject extParent : externalParents) {
+            final File extDir = new File(extParent.getAbsolutePath());
+            if (extDir.exists() && extDir.isDirectory()) {
+                final List<File> extPomFiles = new ArrayList<>();
+                findPomFiles(extDir, extPomFiles);
+                for (final File pomFile : extPomFiles) {
+                    importProject(workspace, pomFile);
+                }
+            }
+        }
     }
 
     /**
@@ -230,8 +267,12 @@ public class WorkspaceService {
     public void addProjectByPath(final Long workspaceId, final String projectPath) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         final File projectDir = new File(projectPath);
-        final File pomFile = new File(projectDir, "pom.xml");
-        if (pomFile.exists()) {
+        if (!projectDir.exists() || !projectDir.isDirectory()) {
+            return;
+        }
+        final List<File> pomFiles = new ArrayList<>();
+        findPomFiles(projectDir, pomFiles);
+        for (final File pomFile : pomFiles) {
             importProject(workspace, pomFile);
         }
     }
@@ -257,6 +298,7 @@ public class WorkspaceService {
             projectToSave.setModules(projectData.getModules());
             projectToSave.setInternalDependencies(projectData.getInternalDependencies());
             projectToSave.setAbsolutePath(projectData.getAbsolutePath());
+            projectToSave.setParentKey(projectData.getParentKey());
         } else {
             projectToSave = projectData;
             projectToSave.setWorkspace(workspace);
