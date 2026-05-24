@@ -7,4 +7,4 @@ echo "Starting application in development mode..."
 
 
 # Run with Spring Boot Maven plugin
-fuser -k 8080/tcp || true && mvn clean spring-boot:run
+fuser -k 3333/tcp || true && mvn clean spring-boot:run
