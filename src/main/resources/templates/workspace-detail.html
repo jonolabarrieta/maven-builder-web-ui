@@ -348,6 +348,17 @@
                                     <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${project.version}">1.0.0</span>
                                 </div>
                                 <div class="text-xs text-gray-400 font-mono" th:text="${project.groupId}">group.id</div>
+                                <div class="mt-1 flex items-center space-x-1.5">
+                                    <button onclick="copyToClipboard(this)" 
+                                            th:attr="data-path=${project.absolutePath}" 
+                                            class="text-[10px] text-gray-500 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded px-2 py-0.5 font-mono flex items-center space-x-1 transition-all shadow-sm" 
+                                            title="Click to copy absolute path">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m-6 4h3" />
+                                        </svg>
+                                        <span class="path-text truncate max-w-[200px]" th:text="${project.relativePath}">relative/path</span>
+                                    </button>
+                                </div>
                             </td>
                             <td class="px-6 py-4">
                                 <button th:attr="hx-get=@{/projects/{id}/branches(id=${project.id})}"
@@ -377,6 +388,22 @@
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex justify-end space-x-2">
+                                    <button th:attr="hx-post=@{/projects/{id}/open-vscode(id=${project.id})}" 
+                                            hx-swap="none" 
+                                            class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" 
+                                            title="Open in VSCode">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                        </svg>
+                                    </button>
+                                    <button th:attr="hx-post=@{/projects/{id}/open-explorer(id=${project.id})}" 
+                                            hx-swap="none" 
+                                            class="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all" 
+                                            title="Open in File Explorer">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                        </svg>
+                                    </button>
                                     <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
                                             hx-target="#project-properties-modal-content"
                                             hx-trigger="click"
@@ -898,6 +925,25 @@
             });
 
             switchTab('Global');
+        }
+
+        function copyToClipboard(btn) {
+            const path = btn.getAttribute('data-path');
+            if (!path) return;
+            navigator.clipboard.writeText(path).then(() => {
+                const textSpan = btn.querySelector('.path-text');
+                const originalText = textSpan.innerText;
+                textSpan.innerText = 'Copied!';
+                btn.classList.add('bg-green-100', 'text-green-800', 'border-green-300');
+                btn.classList.remove('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                setTimeout(() => {
+                    textSpan.innerText = originalText;
+                    btn.classList.remove('bg-green-100', 'text-green-800', 'border-green-300');
+                    btn.classList.add('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
         }
 
         function escapeHtml(text) {

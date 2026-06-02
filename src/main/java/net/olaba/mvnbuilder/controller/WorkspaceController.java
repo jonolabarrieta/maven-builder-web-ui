@@ -330,6 +330,65 @@ public class WorkspaceController {
     }
 
     /**
+     * Opens a project in VSCode.
+     * 
+     * @param id The project ID.
+     * @return Success message.
+     */
+    @PostMapping("/projects/{id}/open-vscode")
+    @ResponseBody
+    public ResponseEntity<String> openVsCode(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final String absolutePath = project.getAbsolutePath();
+        log.info("Opening project '{}' in VSCode (path: {})", project.getArtifactId(), absolutePath);
+        try {
+            final String os = System.getProperty("os.name").toLowerCase();
+            final ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("cmd.exe", "/c", "code", absolutePath);
+            } else {
+                pb = new ProcessBuilder("code", absolutePath);
+            }
+            pb.start();
+            return ResponseEntity.ok("Opening VSCode...");
+        } catch (final Exception e) {
+            log.error("Failed to open VSCode: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Failed to open VSCode: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Opens a project in the system file explorer.
+     * 
+     * @param id The project ID.
+     * @return Success message.
+     */
+    @PostMapping("/projects/{id}/open-explorer")
+    @ResponseBody
+    public ResponseEntity<String> openExplorer(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final String absolutePath = project.getAbsolutePath();
+        log.info("Opening project '{}' in File Explorer (path: {})", project.getArtifactId(), absolutePath);
+        try {
+            final String os = System.getProperty("os.name").toLowerCase();
+            final ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("explorer.exe", absolutePath);
+            } else if (os.contains("mac")) {
+                pb = new ProcessBuilder("open", absolutePath);
+            } else {
+                pb = new ProcessBuilder("xdg-open", absolutePath);
+            }
+            pb.start();
+            return ResponseEntity.ok("Opening File Explorer...");
+        } catch (final Exception e) {
+            log.error("Failed to open File Explorer: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Failed to open File Explorer: " + e.getMessage());
+        }
+    }
+
+
+    /**
      * Toggles the enabled status of a project.
      * 
      * @param id The project ID.
