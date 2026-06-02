@@ -1,0 +1,34 @@
+schema: spec-driven
+
+# Project context
+context: |
+  Tech Stack:
+    - Language: Java 21
+    - Framework: Spring Boot 3.2.5
+    - View/Template Engine: Thymeleaf
+    - Dynamic UI: HTMX (v1.9.10)
+    - CSS/Styling: TailwindCSS via CDN (https://cdn.tailwindcss.com)
+    - Database: H2 (in-memory/file runtime), Spring Data JPA
+    - Utilities: Lombok, Maven Model API, HTMX Spring Boot Thymeleaf helper
+  
+  Directory Structure:
+    - src/main/java/: Java backend files, controllers, services, repositories, and models
+    - src/main/resources/templates/: Thymeleaf template files (index.html, workspace-detail.html)
+    - src/main/resources/static/: Static assets (js, favicon)
+  
+  UI / Frontend Guidelines:
+    - Style: Clean, modern design, Indigo-focused theme (e.g. bg-indigo-600, hover:bg-indigo-700), glassmorphism styling (.glass), and Inter font.
+    - Interactivity: Prefer using HTMX for asynchronous page updates (e.g. hx-post, hx-get, hx-target) to maintain high performance and prevent full page refreshes.
+    - Global spinner: Use `/js/global-spinner.js` to automatically indicate loading/activity states across HTMX calls.
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Keep proposals concise and under 400 words.
+    - Clearly list all new and modified capabilities in the corresponding sections.
+  design:
+    - Focus on structural/component boundaries and design choices.
+    - Include key decisions with alternative designs and rationale.
+  tasks:
+    - Break tasks down into modular, testable steps that take less than 2 hours.
+    - Ensure every controller method or HTML template modification is represented.
