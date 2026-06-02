@@ -16,6 +16,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Controller for managing workspace operations and project views.
@@ -281,25 +282,33 @@ public class WorkspaceController {
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toList());
 
-        final List<String> succeeded = new java.util.ArrayList<>();
-        final List<String> failed = new java.util.ArrayList<>();
+        final List<MavenProject> succeededProjects = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<String> failed = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
 
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
-            try {
-                if (createNew) {
-                    gitService.createBranch(projectDir, branch);
-                } else {
-                    gitService.checkoutBranch(projectDir, branch);
+            futures.add(CompletableFuture.runAsync(() -> {
+                try {
+                    if (createNew) {
+                        gitService.createBranch(projectDir, branch);
+                    } else {
+                        gitService.checkoutBranch(projectDir, branch);
+                    }
+                    project.setGitBranch(branch);
+                    succeededProjects.add(project);
+                } catch (final Exception e) {
+                    log.error("Failed bulk checkout for project '{}': {}", project.getArtifactId(), e.getMessage());
+                    failed.add(project.getArtifactId() + " (" + e.getMessage() + ")");
                 }
-                project.setGitBranch(branch);
-                mavenProjectRepository.save(project);
-                succeeded.add(project.getArtifactId());
-            } catch (final Exception e) {
-                log.error("Failed bulk checkout for project '{}': {}", project.getArtifactId(), e.getMessage());
-                failed.add(project.getArtifactId() + " (" + e.getMessage() + ")");
-            }
+            }));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        if (!succeededProjects.isEmpty()) {
+            mavenProjectRepository.saveAll(succeededProjects);
         }
 
         if (!failed.isEmpty()) {

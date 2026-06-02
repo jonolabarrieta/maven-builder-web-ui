@@ -195,6 +195,7 @@ public class WorkspaceService {
 
         // Get excluded paths
         final Set<String> excludedPaths = new HashSet<>(workspace.getExcludedPaths());
+        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
 
         for (final File pomFile : pomFiles) {
             // Calculate relative path of this pom
@@ -215,7 +216,7 @@ public class WorkspaceService {
             }
 
             if (!excluded) {
-                importProject(workspace, pomFile);
+                importProject(workspace, pomFile, gitRootBranchCache);
             }
         }
 
@@ -251,7 +252,7 @@ public class WorkspaceService {
                 final List<File> extPomFiles = new ArrayList<>();
                 findPomFiles(extDir, extPomFiles);
                 for (final File pomFile : extPomFiles) {
-                    importProject(workspace, pomFile);
+                    importProject(workspace, pomFile, gitRootBranchCache);
                 }
             }
         }
@@ -272,8 +273,9 @@ public class WorkspaceService {
         }
         final List<File> pomFiles = new ArrayList<>();
         findPomFiles(projectDir, pomFiles);
+        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
         for (final File pomFile : pomFiles) {
-            importProject(workspace, pomFile);
+            importProject(workspace, pomFile, gitRootBranchCache);
         }
     }
 
@@ -284,6 +286,17 @@ public class WorkspaceService {
      * @param pomFile   The pom.xml file.
      */
     private void importProject(final Workspace workspace, final File pomFile) {
+        importProject(workspace, pomFile, new java.util.HashMap<>());
+    }
+
+    /**
+     * Imports or updates a single Maven project into a workspace, using a cache for Git branches.
+     * 
+     * @param workspace   The workspace.
+     * @param pomFile     The pom.xml file.
+     * @param branchCache The Git root branch cache.
+     */
+    private void importProject(final Workspace workspace, final File pomFile, final java.util.Map<File, String> branchCache) {
         final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
 
         final Optional<MavenProject> existingOpt = mavenProjectRepository
@@ -304,7 +317,12 @@ public class WorkspaceService {
             projectToSave.setWorkspace(workspace);
         }
 
-        projectToSave.setGitBranch(gitService.getCurrentBranch(pomFile.getParentFile()));
+        final File projectDir = pomFile.getParentFile();
+        final File gitRoot = findGitRoot(projectDir);
+        final File cacheKey = gitRoot != null ? gitRoot : projectDir;
+
+        final String branch = branchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+        projectToSave.setGitBranch(branch);
         mavenProjectRepository.save(projectToSave);
     }
 
@@ -324,7 +342,15 @@ public class WorkspaceService {
         if (files != null) {
             for (final File file : files) {
                 final String name = file.getName();
-                if (file.isDirectory() && !name.startsWith(".") && !name.equals("target") && !name.equals("node_modules")) {
+                if (file.isDirectory() && !name.startsWith(".") 
+                        && !name.equals("target") 
+                        && !name.equals("node_modules")
+                        && !name.equals("src")
+                        && !name.equals("build")
+                        && !name.equals("out")
+                        && !name.equals("dist")
+                        && !name.equals("bin")
+                        && !name.equals("gradle")) {
                     findPomFiles(file, pomFiles);
                 }
             }
@@ -382,6 +408,9 @@ public class WorkspaceService {
         }
 
         final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
+        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+        final List<MavenProject> updatedProjects = new java.util.ArrayList<>();
+
         for (final MavenProject project : projects) {
             final File projectDir;
             if (project.getAbsolutePath() != null) {
@@ -390,8 +419,17 @@ public class WorkspaceService {
                 final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
                 projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
             }
-            project.setGitBranch(gitService.getCurrentBranch(projectDir));
-            mavenProjectRepository.save(project);
+
+            final File gitRoot = findGitRoot(projectDir);
+            final File cacheKey = gitRoot != null ? gitRoot : projectDir;
+
+            final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+            project.setGitBranch(branch);
+            updatedProjects.add(project);
+        }
+
+        if (!updatedProjects.isEmpty()) {
+            mavenProjectRepository.saveAll(updatedProjects);
         }
     }
 
@@ -473,5 +511,24 @@ public class WorkspaceService {
             }
         }
         return true;
+    }
+
+    /**
+     * Finds the Git repository root directory for a given directory.
+     * Searches upwards until a directory containing a ".git" file/folder is found.
+     * 
+     * @param dir The starting directory.
+     * @return The Git repository root directory, or null if not found.
+     */
+    private File findGitRoot(final File dir) {
+        File current = dir;
+        while (current != null) {
+            final File gitDir = new File(current, ".git");
+            if (gitDir.exists()) {
+                return current;
+            }
+            current = current.getParentFile();
+        }
+        return null;
     }
 }
