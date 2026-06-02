@@ -13,8 +13,26 @@
                 </svg>
             </button>
         </div>
+
+        <!-- Custom Path Direct Entry -->
+        <div class="px-6 py-3 bg-gray-50 border-b border-gray-100">
+            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 font-semibold">Direct Path Entry</label>
+            <div class="flex gap-2">
+                <input type="text" id="custom-project-path" th:value="${currentPath}" class="flex-grow px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all font-mono" placeholder="Enter absolute directory path...">
+                <button type="button" 
+                        onclick="loadCustomPath()" 
+                        class="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-2 rounded-lg font-semibold text-xs transition-all flex items-center shadow-sm">
+                    Go
+                </button>
+                <button type="button" 
+                        onclick="addCustomPathDirectly()" 
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-semibold text-xs transition-all flex items-center shadow-sm shadow-indigo-100">
+                    Add
+                </button>
+            </div>
+        </div>
         
-        <div class="p-4 h-[400px] overflow-y-auto">
+        <div class="p-4 h-[350px] overflow-y-auto">
             <div th:if="${parentPath != null}" class="mb-2">
                 <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${parentPath})}"
                         hx-target="#explorer-modal-content"
@@ -70,6 +88,32 @@
                     const count = document.querySelectorAll('.explorer-checkbox:checked').length;
                     document.getElementById('explorer-count').innerText = count;
                 });
+            });
+
+            function loadCustomPath() {
+                const pathInput = document.getElementById('custom-project-path');
+                if (pathInput) {
+                    const path = pathInput.value;
+                    if (path) {
+                        htmx.ajax('GET', `/workspaces/${workspaceId}/explorer?path=` + encodeURIComponent(path), '#explorer-modal-content');
+                    }
+                }
+            }
+
+            function addCustomPathDirectly() {
+                const pathInput = document.getElementById('custom-project-path');
+                if (pathInput) {
+                    const path = pathInput.value;
+                    if (path) {
+                        addCustomProjectPath(path);
+                    }
+                }
+            }
+
+            document.getElementById('custom-project-path').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loadCustomPath();
+                }
             });
         </script>
     </div>

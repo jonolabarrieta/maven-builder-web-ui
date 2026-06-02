@@ -639,6 +639,30 @@ public class WorkspaceController {
     }
 
     /**
+     * Shows a generic file directory explorer for workspace base directory selection.
+     *
+     * @param path          The directory path to browse.
+     * @param targetInputId The HTML element ID to populate with the selected directory path.
+     * @param model         The UI model.
+     * @return The directory explorer fragment.
+     */
+    @GetMapping("/workspaces/explorer")
+    public String showWorkspaceExplorer(final @RequestParam(required = false) String path,
+                                        final @RequestParam String targetInputId,
+                                        final Model model) {
+        final String currentPath = (path == null || path.isEmpty()) ? System.getProperty("user.home") : path;
+        final List<FileSystemService.FileItem> items = fileSystemService.listDirectory(currentPath);
+        final File currentDir = new File(currentPath);
+
+        model.addAttribute("items", items);
+        model.addAttribute("currentPath", currentPath);
+        model.addAttribute("parentPath", currentDir.getParent());
+        model.addAttribute("targetInputId", targetInputId);
+
+        return "fragments/directory-explorer :: directory-explorer-content";
+    }
+
+    /**
      * Adds projects to a workspace from selected file system paths.
      * 
      * @param id    The workspace ID.
