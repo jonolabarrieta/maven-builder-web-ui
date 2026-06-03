@@ -107,10 +107,14 @@
 
     // --- Standard Form Submissions (Full page navigation) ---
     document.addEventListener('submit', function(event) {
+        const defaultPrevented = event.defaultPrevented;
         const form = event.target;
         // Wait for event propagation to complete to check if the event was canceled
         setTimeout(() => {
-            if (event.defaultPrevented) return;
+            if (defaultPrevented) return;
+
+            // Check if event target has closest/hasAttribute support (defensive programming)
+            if (!form || typeof form.hasAttribute !== 'function' || typeof form.closest !== 'function') return;
 
             // Check if it is an HTMX form (which would have been handled via AJAX)
             const isHtmx = form.hasAttribute('hx-post') || 
@@ -126,12 +130,21 @@
                 // Trigger the spinner. Since the page is navigating,
                 // the spinner will show until the new page loads.
                 updateActiveRequests(1);
+                // Set fallback timeout to hide spinner if the page doesn't unload (e.g. file download)
+                setTimeout(() => {
+                    updateActiveRequests(-1);
+                }, 2000);
             }
         }, 0);
     });
 
     // --- Standard Link Clicks (Full page navigation) ---
     document.addEventListener('click', function(event) {
+        const defaultPrevented = event.defaultPrevented;
+
+        // Check if event target has closest support (defensive programming)
+        if (!event.target || typeof event.target.closest !== 'function') return;
+
         // Find the closest anchor tag
         const link = event.target.closest('a');
         if (!link) return;
@@ -140,7 +153,7 @@
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
         // Ignore clicks that were prevented by other scripts
-        if (event.defaultPrevented) return;
+        if (defaultPrevented) return;
 
         const href = link.getAttribute('href');
         if (!href) return;
@@ -167,6 +180,10 @@
         if (!isHtmx) {
             // Trigger the spinner during page transition
             updateActiveRequests(1);
+            // Set fallback timeout to hide spinner if the page doesn't unload (e.g. file download)
+            setTimeout(() => {
+                updateActiveRequests(-1);
+            }, 2000);
         }
     });
 })();

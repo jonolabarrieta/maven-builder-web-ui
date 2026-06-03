@@ -35,6 +35,8 @@ public class WorkspaceController {
     private final MavenRepositoryService mavenRepositoryService;
     private final FileSystemService fileSystemService;
     private final MavenService mavenService;
+    private final SystemSettingService systemSettingService;
+    private final net.olaba.mvnbuilder.repository.JavaInstallationRepository javaInstallationRepository;
 
     @ModelAttribute("availableGroupIds")
     public List<String> getAvailableGroupIds() {
@@ -50,6 +52,9 @@ public class WorkspaceController {
     @GetMapping
     public String index(final Model model) {
         model.addAttribute("workspaces", workspaceService.getAllWorkspaces());
+        final String favoritePath = systemSettingService.getSettings().getFavoritePath();
+        model.addAttribute("favoritePath", favoritePath != null ? favoritePath : "");
+        model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "index";
     }
 
@@ -64,8 +69,15 @@ public class WorkspaceController {
     @PostMapping("/workspaces")
     public String createWorkspace(final @RequestParam String name,
             final @RequestParam(required = false) String basePath,
-            final @RequestParam(required = false, defaultValue = "false") boolean skipScan) {
-        workspaceService.createWorkspace(name, basePath, skipScan);
+            final @RequestParam(required = false, defaultValue = "false") boolean skipScan,
+            final @RequestParam(required = false) Long javaInstallationId) {
+        final Workspace ws = workspaceService.createWorkspace(name, basePath, skipScan);
+        if (javaInstallationId != null) {
+            javaInstallationRepository.findById(javaInstallationId).ifPresent(ji -> {
+                ws.setJavaInstallation(ji);
+                workspaceService.saveWorkspace(ws);
+            });
+        }
         return "redirect:/";
     }
 
@@ -79,8 +91,15 @@ public class WorkspaceController {
      */
     @PostMapping("/workspaces/{id}/edit")
     public String updateWorkspace(final @PathVariable Long id, final @RequestParam String name,
-            final @RequestParam(required = false) String basePath) {
-        workspaceService.updateWorkspace(id, name, basePath);
+            final @RequestParam(required = false) String basePath,
+            final @RequestParam(required = false) Long javaInstallationId) {
+        final Workspace ws = workspaceService.updateWorkspace(id, name, basePath);
+        if (javaInstallationId != null && javaInstallationId > 0) {
+            javaInstallationRepository.findById(javaInstallationId).ifPresent(ws::setJavaInstallation);
+        } else {
+            ws.setJavaInstallation(null);
+        }
+        workspaceService.saveWorkspace(ws);
         return "redirect:/workspaces/" + id;
     }
 
@@ -121,6 +140,7 @@ public class WorkspaceController {
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         model.addAttribute("workspace", workspace);
         model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
+        model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "workspace-detail";
     }
 
@@ -650,7 +670,10 @@ public class WorkspaceController {
     public String showWorkspaceExplorer(final @RequestParam(required = false) String path,
                                         final @RequestParam String targetInputId,
                                         final Model model) {
-        final String currentPath = (path == null || path.isEmpty()) ? System.getProperty("user.home") : path;
+        // Use configured favorite path as default, fall back to user home
+        final String favoritePath = systemSettingService.getSettings().getFavoritePath();
+        final String defaultPath = (favoritePath != null && !favoritePath.isEmpty()) ? favoritePath : System.getProperty("user.home");
+        final String currentPath = (path == null || path.isEmpty()) ? defaultPath : path;
         final List<FileSystemService.FileItem> items = fileSystemService.listDirectory(currentPath);
         final File currentDir = new File(currentPath);
 

@@ -38,6 +38,11 @@ public class Workspace {
     @Builder.Default
     private List<MavenProject> projects = new ArrayList<>();
 
+    /** Optional Java installation associated with this workspace. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "java_installation_id", nullable = true)
+    private JavaInstallation javaInstallation;
+
     /** List of directory paths excluded from the workspace scanning process. */
     @ElementCollection
     @CollectionTable(name = "workspace_excluded_paths", joinColumns = @JoinColumn(name = "workspace_id"))

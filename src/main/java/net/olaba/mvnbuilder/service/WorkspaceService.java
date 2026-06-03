@@ -106,6 +106,17 @@ public class WorkspaceService {
     }
 
     /**
+     * Saves (merges) a workspace entity.
+     * 
+     * @param workspace The workspace to save.
+     * @return The persisted workspace.
+     */
+    @Transactional
+    public Workspace saveWorkspace(final Workspace workspace) {
+        return workspaceRepository.save(workspace);
+    }
+
+    /**
      * Duplicates an existing workspace and all its projects.
      * 
      * @param id The ID of the workspace to duplicate.
