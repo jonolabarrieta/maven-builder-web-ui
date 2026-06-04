@@ -77,6 +77,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare Docker Context
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          cp target/mvn-builder release-artifacts/mvn-builder-linux-amd64
+
       - name: Log in to GitHub Container Registry
         if: matrix.os == 'ubuntu-latest'
         uses: docker/login-action@v3
