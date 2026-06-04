@@ -26,6 +26,7 @@ public class BuildService {
     private final WorkspaceService workspaceService;
     private final BuildProfileRepository buildProfileRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final SystemSettingService systemSettingService;
 
     /**
      * Retrieves the command arguments from the active build profile.
@@ -64,7 +65,8 @@ public class BuildService {
         final String[] fullCmd = new String[args.length + 1];
         fullCmd[0] = getMvnCommand();
         System.arraycopy(args, 0, fullCmd, 1, args.length);
-        processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd)
+        final String javaHome = getJavaHomeForWorkspace(project.getWorkspace());
+        processExecutionService.executeCommandWithJavaHome(project.getArtifactId(), projectDir, javaHome, fullCmd)
                 .thenAccept(result -> {
                     final ActionSummary summary = ActionSummary.builder()
                             .withAction("build")
@@ -106,8 +108,9 @@ public class BuildService {
                 final String[] fullCmd = new String[args.length + 1];
                 fullCmd[0] = getMvnCommand();
                 System.arraycopy(args, 0, fullCmd, 1, args.length);
+                final String javaHome = getJavaHomeForWorkspace(project.getWorkspace());
 
-                return processExecutionService.executeCommand(project.getArtifactId(), projectDir, fullCmd)
+                return processExecutionService.executeCommandWithJavaHome(project.getArtifactId(), projectDir, javaHome, fullCmd)
                         .thenApply(result -> {
                             final int resultExitCode = result.getExitCode();
                             if (resultExitCode != 0) {
@@ -216,22 +219,20 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitFetch(final List<MavenProject> projects) {
-        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = getProjectDir(project);
-            future = future.thenCompose(v -> 
-                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch")
-                    .thenAccept(res -> {})
-            );
+            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch"));
         }
-        future.thenRun(() -> {
-            final ActionSummary summary = ActionSummary.builder()
-                    .withAction("git-fetch")
-                    .withSuccess(true)
-                    .build();
-            messagingTemplate.convertAndSend("/topic/action-summary", summary);
-        });
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> {
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("git-fetch")
+                        .withSuccess(true)
+                        .build();
+                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+            });
     }
 
     /**
@@ -240,14 +241,14 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitPull(final List<MavenProject> projects) {
-        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
-        final List<String> changed = new java.util.ArrayList<>();
-        final List<String> noChanges = new java.util.ArrayList<>();
+        final List<String> changed = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<String> noChanges = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
         
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = getProjectDir(project);
-            future = future.thenCompose(v -> 
+            futures.add(
                 processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
                     .thenAccept(result -> {
                         boolean hasChanges = true;
@@ -266,15 +267,16 @@ public class BuildService {
             );
         }
         
-        future.thenRun(() -> {
-            final ActionSummary summary = ActionSummary.builder()
-                    .withAction("git-pull")
-                    .withSuccess(true)
-                    .withChangedProjects(changed)
-                    .withNoChangesProjects(noChanges)
-                    .build();
-            messagingTemplate.convertAndSend("/topic/action-summary", summary);
-        });
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> {
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("git-pull")
+                        .withSuccess(true)
+                        .withChangedProjects(changed)
+                        .withNoChangesProjects(noChanges)
+                        .build();
+                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+            });
     }
 
     /**
@@ -317,22 +319,20 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitDiscard(final List<MavenProject> projects) {
-        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = getProjectDir(project);
-            future = future.thenCompose(v -> 
-                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "checkout", "--", ".")
-                    .thenAccept(res -> {})
-            );
+            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "checkout", "--", "."));
         }
-        future.thenRun(() -> {
-            final ActionSummary summary = ActionSummary.builder()
-                    .withAction("git-discard")
-                    .withSuccess(true)
-                    .build();
-            messagingTemplate.convertAndSend("/topic/action-summary", summary);
-        });
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> {
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("git-discard")
+                        .withSuccess(true)
+                        .build();
+                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+            });
     }
 
     /**
@@ -341,22 +341,20 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitUnstage(final List<MavenProject> projects) {
-        CompletableFuture<Void> future = CompletableFuture.completedFuture(null);
+        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = getProjectDir(project);
-            future = future.thenCompose(v -> 
-                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "restore", "--staged", ".")
-                    .thenAccept(res -> {})
-            );
+            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "restore", "--staged", "."));
         }
-        future.thenRun(() -> {
-            final ActionSummary summary = ActionSummary.builder()
-                    .withAction("git-unstage")
-                    .withSuccess(true)
-                    .build();
-            messagingTemplate.convertAndSend("/topic/action-summary", summary);
-        });
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> {
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("git-unstage")
+                        .withSuccess(true)
+                        .build();
+                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+            });
     }
 
     /**
@@ -370,5 +368,20 @@ public class BuildService {
             return new File(project.getAbsolutePath());
         }
         return new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
+    }
+
+    /**
+     * Resolves the appropriate Java Home path for a workspace.
+     * 
+     * @param workspace The workspace to check.
+     * @return The path to JAVA_HOME, or null if none is configured.
+     */
+    private String getJavaHomeForWorkspace(final net.olaba.mvnbuilder.entities.Workspace workspace) {
+        if (workspace != null && workspace.getJavaInstallation() != null) {
+            return workspace.getJavaInstallation().getJavaHome();
+        }
+        return systemSettingService.getDefaultJavaInstallation()
+                .map(net.olaba.mvnbuilder.entities.JavaInstallation::getJavaHome)
+                .orElse(null);
     }
 }

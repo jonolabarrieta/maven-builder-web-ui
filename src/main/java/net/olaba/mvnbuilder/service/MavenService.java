@@ -32,18 +32,18 @@ public class MavenService {
             final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
             final Model model = mavenReader.read(reader);
 
-            final String artifactId = resolveProperty(model.getArtifactId(), model);
+            final String artifactId = resolveProperty(model.getArtifactId(), model, pomFile);
             String groupId = model.getGroupId();
             if (groupId == null && model.getParent() != null) {
                 groupId = model.getParent().getGroupId();
             }
-            groupId = resolveProperty(groupId, model);
+            groupId = resolveProperty(groupId, model, pomFile);
 
             String version = model.getVersion();
             if (version == null && model.getParent() != null) {
                 version = model.getParent().getVersion();
             }
-            version = resolveProperty(version, model);
+            version = resolveProperty(version, model, pomFile);
 
             final String absolutePath = pomFile.getParentFile().getAbsolutePath();
             String relativePath;
@@ -88,22 +88,124 @@ public class MavenService {
     }
 
     /**
-     * Resolves basic Maven properties (like ${project.version}) if they are defined
-     * in the model.
+     * Resolves Maven properties (like ${project.version} or custom ones) if they are defined
+     * in the model or parent POM files.
      * 
      * @param value The value to resolve.
      * @param model The Maven model.
+     * @param pomFile The POM file associated with the model.
      * @return The resolved value or the original if not found.
      */
-    private String resolveProperty(final String value, final Model model) {
-        if (value != null && value.startsWith("${") && value.endsWith("}")) {
+    private String resolveProperty(final String value, final Model model, final File pomFile) {
+        if (value == null) {
+            return null;
+        }
+        if (value.startsWith("${") && value.endsWith("}")) {
             final String propertyName = value.substring(2, value.length() - 1);
-            final String propertyValue = model.getProperties().getProperty(propertyName);
+
+            // Standard Maven properties
+            if ("project.parent.version".equals(propertyName) || "parent.version".equals(propertyName)) {
+                if (model.getParent() != null) {
+                    return resolveProperty(model.getParent().getVersion(), model, pomFile);
+                }
+            }
+            if ("project.groupId".equals(propertyName) || "pom.groupId".equals(propertyName)) {
+                String gId = model.getGroupId();
+                if (gId == null && model.getParent() != null) {
+                    gId = model.getParent().getGroupId();
+                }
+                return gId;
+            }
+            if ("project.version".equals(propertyName) || "pom.version".equals(propertyName)) {
+                String v = model.getVersion();
+                if (v == null && model.getParent() != null) {
+                    v = model.getParent().getVersion();
+                }
+                return v;
+            }
+
+            // Custom properties
+            String propertyValue = model.getProperties() != null ? model.getProperties().getProperty(propertyName) : null;
+            if (propertyValue == null && model.getParent() != null) {
+                // Try parent POM properties
+                final java.util.Properties parentProps = getParentPomProperties(pomFile, model.getParent());
+                propertyValue = parentProps.getProperty(propertyName);
+            }
             if (propertyValue != null) {
-                return propertyValue;
+                // Recursively resolve in case the property value itself is a property reference
+                return resolveProperty(propertyValue, model, pomFile);
             }
         }
         return value;
+    }
+
+    /**
+     * Helper to recursively load properties from parent POM files.
+     */
+    public java.util.Properties getParentPomProperties(final File pomFile, final org.apache.maven.model.Parent parent) {
+        final java.util.Properties props = new java.util.Properties();
+        if (parent == null) {
+            return props;
+        }
+
+        final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
+        final String parentGroupId = parent.getGroupId();
+        final String parentArtifactId = parent.getArtifactId();
+        final String parentVersion = parent.getVersion();
+        final String parentRelativePath = parent.getRelativePath();
+
+        // Try to find the parent POM file:
+        // 1. Check relative path if specified (default: ../pom.xml)
+        final String relPath = parentRelativePath != null ? parentRelativePath : "../pom.xml";
+        File parentFile = new File(pomFile.getParentFile(), relPath);
+        if (parentFile.isDirectory()) {
+            parentFile = new File(parentFile, "pom.xml");
+        }
+
+        Model parentModel = null;
+        if (parentFile.exists()) {
+            try (final FileReader pr = new FileReader(parentFile)) {
+                final Model pm = mavenReader.read(pr);
+                String groupId = pm.getGroupId();
+                if (groupId == null && pm.getParent() != null) {
+                    groupId = pm.getParent().getGroupId();
+                }
+                if (parentGroupId.equals(groupId) && parentArtifactId.equals(pm.getArtifactId())) {
+                    parentModel = pm;
+                }
+            } catch (final Exception e) {
+                // Ignore and try ~/.m2
+            }
+        }
+
+        if (parentModel == null) {
+            // 2. Look in the local ~/.m2 repository
+            final String m2Path = System.getProperty("user.home") + "/.m2/repository/"
+                    + parentGroupId.replace('.', '/') + "/" + parentArtifactId + "/" + parentVersion + "/"
+                    + parentArtifactId + "-" + parentVersion + ".pom";
+            final File m2File = new File(m2Path);
+            if (m2File.exists()) {
+                try (final FileReader pr = new FileReader(m2File)) {
+                    parentModel = mavenReader.read(pr);
+                } catch (final Exception e) {
+                    // Ignore
+                }
+            }
+        }
+
+        if (parentModel != null) {
+            // Recursively get grandparent properties first, then put parent's to override them
+            if (parentModel.getParent() != null) {
+                final File currentPomFile = parentFile.exists() ? parentFile : new File(System.getProperty("user.home") + "/.m2/repository/"
+                    + parentGroupId.replace('.', '/') + "/" + parentArtifactId + "/" + parentVersion + "/pom.xml");
+                props.putAll(getParentPomProperties(currentPomFile, parentModel.getParent()));
+            }
+            if (parentModel.getProperties() != null) {
+                props.putAll(parentModel.getProperties());
+            }
+        }
+
+        return props;
     }
 
     /**
@@ -121,52 +223,9 @@ public class MavenService {
         try (final FileReader reader = new FileReader(pomFile)) {
             final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
             final Model model = mavenReader.read(reader);
-
-            if (model.getParent() == null) {
-                return new java.util.Properties();
-            }
-
-            final org.apache.maven.model.Parent parent = model.getParent();
-            final String parentGroupId = parent.getGroupId();
-            final String parentArtifactId = parent.getArtifactId();
-            final String parentVersion = parent.getVersion();
-            final String parentRelativePath = parent.getRelativePath();
-
-            // Try to find the parent POM file:
-            // 1. Check relative path if specified (default: ../pom.xml)
-            final String relPath = parentRelativePath != null ? parentRelativePath : "../pom.xml";
-            File parentFile = new File(pomFile.getParentFile(), relPath);
-            if (parentFile.isDirectory()) {
-                parentFile = new File(parentFile, "pom.xml");
-            }
-            if (parentFile.exists()) {
-                try (final FileReader pr = new FileReader(parentFile)) {
-                    final Model parentModel = mavenReader.read(pr);
-                    String groupId = parentModel.getGroupId();
-                    if (groupId == null && parentModel.getParent() != null) {
-                        groupId = parentModel.getParent().getGroupId();
-                    }
-                    if (parentGroupId.equals(groupId) && parentArtifactId.equals(parentModel.getArtifactId())) {
-                        return parentModel.getProperties();
-                    }
-                } catch (final Exception e) {
-                    // Ignore and try ~/.m2
-                }
-            }
-
-            // 2. Look in the local ~/.m2 repository
-            final String m2Path = System.getProperty("user.home") + "/.m2/repository/"
-                    + parentGroupId.replace('.', '/') + "/" + parentArtifactId + "/" + parentVersion + "/"
-                    + parentArtifactId + "-" + parentVersion + ".pom";
-            final File m2File = new File(m2Path);
-            if (m2File.exists()) {
-                try (final FileReader pr = new FileReader(m2File)) {
-                    final Model parentModel = mavenReader.read(pr);
-                    return parentModel.getProperties();
-                }
-            }
+            return getParentPomProperties(pomFile, model.getParent());
         } catch (final Exception e) {
-            // Log or ignore
+            // Ignore
         }
 
         return new java.util.Properties();

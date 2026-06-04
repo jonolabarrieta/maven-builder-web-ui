@@ -48,7 +48,7 @@
                             </div>
                         </div>
                         <div class="flex items-center space-x-1">
-                            <button th:unless="${child.modules.empty}"
+                            <button th:if="${child.hasChildren()}"
                                     th:attr="hx-get=@{/projects/{id}/children(id=${child.id})}"
                                     hx-target="#children-modal-content"
                                     class="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-md transition-all flex items-center space-x-1" title="View Submodules">

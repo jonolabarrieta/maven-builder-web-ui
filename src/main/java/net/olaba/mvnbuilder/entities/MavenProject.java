@@ -75,4 +75,40 @@ public class MavenProject {
     @ManyToOne
     @JoinColumn(name = "workspace_id")
     private Workspace workspace;
+
+    /**
+     * Checks if this project has any child subprojects in the workspace.
+     * Calculated dynamically using directory structures.
+     *
+     * @return true if there are other projects nested inside this project's path.
+     */
+    public boolean hasChildren() {
+        if (workspace == null || workspace.getProjects() == null) {
+            return false;
+        }
+        if (this.relativePath == null) {
+            return false;
+        }
+        final String parentPath = this.relativePath.replace('\\', '/');
+        for (final MavenProject child : workspace.getProjects()) {
+            if (child == this) {
+                continue;
+            }
+            if (child.getId() != null && this.getId() != null && child.getId().equals(this.getId())) {
+                continue;
+            }
+            if (child.getRelativePath() == null) {
+                continue;
+            }
+            final String childPath = child.getRelativePath().replace('\\', '/');
+            if (parentPath.equals(".")) {
+                return true;
+            }
+            if (childPath.startsWith(parentPath + "/")) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
+

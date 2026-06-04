@@ -16,6 +16,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Controller for managing workspace operations and project views.
@@ -34,6 +35,8 @@ public class WorkspaceController {
     private final MavenRepositoryService mavenRepositoryService;
     private final FileSystemService fileSystemService;
     private final MavenService mavenService;
+    private final SystemSettingService systemSettingService;
+    private final net.olaba.mvnbuilder.repository.JavaInstallationRepository javaInstallationRepository;
 
     @ModelAttribute("availableGroupIds")
     public List<String> getAvailableGroupIds() {
@@ -49,6 +52,9 @@ public class WorkspaceController {
     @GetMapping
     public String index(final Model model) {
         model.addAttribute("workspaces", workspaceService.getAllWorkspaces());
+        final String favoritePath = systemSettingService.getSettings().getFavoritePath();
+        model.addAttribute("favoritePath", favoritePath != null ? favoritePath : "");
+        model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "index";
     }
 
@@ -63,8 +69,15 @@ public class WorkspaceController {
     @PostMapping("/workspaces")
     public String createWorkspace(final @RequestParam String name,
             final @RequestParam(required = false) String basePath,
-            final @RequestParam(required = false, defaultValue = "false") boolean skipScan) {
-        workspaceService.createWorkspace(name, basePath, skipScan);
+            final @RequestParam(required = false, defaultValue = "false") boolean skipScan,
+            final @RequestParam(required = false) Long javaInstallationId) {
+        final Workspace ws = workspaceService.createWorkspace(name, basePath, skipScan);
+        if (javaInstallationId != null) {
+            javaInstallationRepository.findById(javaInstallationId).ifPresent(ji -> {
+                ws.setJavaInstallation(ji);
+                workspaceService.saveWorkspace(ws);
+            });
+        }
         return "redirect:/";
     }
 
@@ -78,8 +91,15 @@ public class WorkspaceController {
      */
     @PostMapping("/workspaces/{id}/edit")
     public String updateWorkspace(final @PathVariable Long id, final @RequestParam String name,
-            final @RequestParam(required = false) String basePath) {
-        workspaceService.updateWorkspace(id, name, basePath);
+            final @RequestParam(required = false) String basePath,
+            final @RequestParam(required = false) Long javaInstallationId) {
+        final Workspace ws = workspaceService.updateWorkspace(id, name, basePath);
+        if (javaInstallationId != null && javaInstallationId > 0) {
+            javaInstallationRepository.findById(javaInstallationId).ifPresent(ws::setJavaInstallation);
+        } else {
+            ws.setJavaInstallation(null);
+        }
+        workspaceService.saveWorkspace(ws);
         return "redirect:/workspaces/" + id;
     }
 
@@ -116,11 +136,28 @@ public class WorkspaceController {
      */
     @GetMapping("/workspaces/{id}")
     public String viewWorkspace(final @PathVariable Long id, final Model model) {
-        workspaceService.refreshGitStatus(id);
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         model.addAttribute("workspace", workspace);
         model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
+        model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "workspace-detail";
+    }
+
+    /**
+     * Asynchronously refreshes the Git branch status and returns the project table body fragment.
+     * 
+     * @param id    The workspace ID.
+     * @param model The UI model.
+     * @return The project table body fragment template path.
+     */
+    @GetMapping("/workspaces/{id}/git-status-table")
+    public String getGitStatusTable(final @PathVariable Long id, final Model model) {
+        log.info("Asynchronously refreshing Git status for workspace ID {}", id);
+        workspaceService.refreshGitStatus(id);
+        model.addAttribute("workspace", workspaceService.getWorkspace(id).orElseThrow());
+        model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
+        model.addAttribute("isAsyncRefresh", true);
+        return "workspace-detail :: project-table-body";
     }
 
     /**
@@ -256,6 +293,50 @@ public class WorkspaceController {
     }
 
     /**
+     * Exports the full workspace configuration (projects in order) as a text file.
+     * 
+     * @param id The workspace ID.
+     * @return A plain text response containing workspace configuration and project paths.
+     */
+    @GetMapping("/workspaces/{id}/export")
+    public ResponseEntity<String> exportWorkspace(final @PathVariable Long id) {
+        final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
+        final String content = workspaceService.exportWorkspace(id);
+        
+        final String safeName = workspace.getName().replaceAll("[^a-zA-Z0-9-_]", "_");
+        
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"workspace-" + safeName + ".txt\"")
+                .contentType(org.springframework.http.MediaType.TEXT_PLAIN)
+                .body(content);
+    }
+
+    /**
+     * Imports a workspace from a plain text configuration file.
+     * 
+     * @param file The uploaded text file.
+     * @param redirectAttributes Redirect attributes.
+     * @return Redirect to home or details.
+     */
+    @PostMapping("/workspaces/import")
+    public String importWorkspace(final @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+                                  final RedirectAttributes redirectAttributes) {
+        if (file.isEmpty()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "Uploaded file is empty");
+            return "redirect:/";
+        }
+        try {
+            final String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            final Workspace ws = workspaceService.importWorkspace(content);
+            return "redirect:/workspaces/" + ws.getId();
+        } catch (final Exception e) {
+            log.error("Failed to import workspace: {}", e.getMessage(), e);
+            redirectAttributes.addFlashAttribute("errorMessage", "Failed to import workspace: " + e.getMessage());
+            return "redirect:/";
+        }
+    }
+
+    /**
      * Executes bulk branch checkout/creation on multiple projects.
      * 
      * @param id         The workspace ID.
@@ -281,25 +362,33 @@ public class WorkspaceController {
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toList());
 
-        final List<String> succeeded = new java.util.ArrayList<>();
-        final List<String> failed = new java.util.ArrayList<>();
+        final List<MavenProject> succeededProjects = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<String> failed = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
 
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
             final File projectDir = new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
-            try {
-                if (createNew) {
-                    gitService.createBranch(projectDir, branch);
-                } else {
-                    gitService.checkoutBranch(projectDir, branch);
+            futures.add(CompletableFuture.runAsync(() -> {
+                try {
+                    if (createNew) {
+                        gitService.createBranch(projectDir, branch);
+                    } else {
+                        gitService.checkoutBranch(projectDir, branch);
+                    }
+                    project.setGitBranch(branch);
+                    succeededProjects.add(project);
+                } catch (final Exception e) {
+                    log.error("Failed bulk checkout for project '{}': {}", project.getArtifactId(), e.getMessage());
+                    failed.add(project.getArtifactId() + " (" + e.getMessage() + ")");
                 }
-                project.setGitBranch(branch);
-                mavenProjectRepository.save(project);
-                succeeded.add(project.getArtifactId());
-            } catch (final Exception e) {
-                log.error("Failed bulk checkout for project '{}': {}", project.getArtifactId(), e.getMessage());
-                failed.add(project.getArtifactId() + " (" + e.getMessage() + ")");
-            }
+            }));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        if (!succeededProjects.isEmpty()) {
+            mavenProjectRepository.saveAll(succeededProjects);
         }
 
         if (!failed.isEmpty()) {
@@ -319,6 +408,65 @@ public class WorkspaceController {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         buildService.buildProject(project);
     }
+
+    /**
+     * Opens a project in VSCode.
+     * 
+     * @param id The project ID.
+     * @return Success message.
+     */
+    @PostMapping("/projects/{id}/open-vscode")
+    @ResponseBody
+    public ResponseEntity<String> openVsCode(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final String absolutePath = project.getAbsolutePath();
+        log.info("Opening project '{}' in VSCode (path: {})", project.getArtifactId(), absolutePath);
+        try {
+            final String os = System.getProperty("os.name").toLowerCase();
+            final ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("cmd.exe", "/c", "code", absolutePath);
+            } else {
+                pb = new ProcessBuilder("code", absolutePath);
+            }
+            pb.start();
+            return ResponseEntity.ok("Opening VSCode...");
+        } catch (final Exception e) {
+            log.error("Failed to open VSCode: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Failed to open VSCode: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Opens a project in the system file explorer.
+     * 
+     * @param id The project ID.
+     * @return Success message.
+     */
+    @PostMapping("/projects/{id}/open-explorer")
+    @ResponseBody
+    public ResponseEntity<String> openExplorer(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final String absolutePath = project.getAbsolutePath();
+        log.info("Opening project '{}' in File Explorer (path: {})", project.getArtifactId(), absolutePath);
+        try {
+            final String os = System.getProperty("os.name").toLowerCase();
+            final ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("explorer.exe", absolutePath);
+            } else if (os.contains("mac")) {
+                pb = new ProcessBuilder("open", absolutePath);
+            } else {
+                pb = new ProcessBuilder("xdg-open", absolutePath);
+            }
+            pb.start();
+            return ResponseEntity.ok("Opening File Explorer...");
+        } catch (final Exception e) {
+            log.error("Failed to open File Explorer: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Failed to open File Explorer: " + e.getMessage());
+        }
+    }
+
 
     /**
      * Toggles the enabled status of a project.
@@ -357,6 +505,46 @@ public class WorkspaceController {
     public void pullProject(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         buildService.gitPull(project);
+    }
+
+    /**
+     * Unstages all staged changes for a project via Git (git restore --staged .).
+     * 
+     * @param id The project ID.
+     * @return A success or error response.
+     */
+    @PostMapping("/projects/{id}/git/unstage")
+    @ResponseBody
+    public ResponseEntity<String> unstageProject(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        log.info("Unstaging changes for project '{}' (id={})", project.getArtifactId(), id);
+        try {
+            buildService.gitUnstage(project);
+            return ResponseEntity.ok("Unstaged successfully");
+        } catch (final Exception e) {
+            log.error("Failed to unstage project '{}': {}", project.getArtifactId(), e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+
+    /**
+     * Discards all local unstaged changes for a project via Git (git checkout -- .).
+     * 
+     * @param id The project ID.
+     * @return A success or error response.
+     */
+    @PostMapping("/projects/{id}/git/discard")
+    @ResponseBody
+    public ResponseEntity<String> discardProjectChanges(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        log.info("Discarding changes for project '{}' (id={})", project.getArtifactId(), id);
+        try {
+            buildService.gitDiscard(project);
+            return ResponseEntity.ok("Changes discarded successfully");
+        } catch (final Exception e) {
+            log.error("Failed to discard changes for project '{}': {}", project.getArtifactId(), e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
     }
 
     /**
@@ -568,6 +756,33 @@ public class WorkspaceController {
         model.addAttribute("parentPath", currentDir.getParent());
 
         return "fragments/explorer :: explorer-content";
+    }
+
+    /**
+     * Shows a generic file directory explorer for workspace base directory selection.
+     *
+     * @param path          The directory path to browse.
+     * @param targetInputId The HTML element ID to populate with the selected directory path.
+     * @param model         The UI model.
+     * @return The directory explorer fragment.
+     */
+    @GetMapping("/workspaces/explorer")
+    public String showWorkspaceExplorer(final @RequestParam(required = false) String path,
+                                        final @RequestParam String targetInputId,
+                                        final Model model) {
+        // Use configured favorite path as default, fall back to user home
+        final String favoritePath = systemSettingService.getSettings().getFavoritePath();
+        final String defaultPath = (favoritePath != null && !favoritePath.isEmpty()) ? favoritePath : System.getProperty("user.home");
+        final String currentPath = (path == null || path.isEmpty()) ? defaultPath : path;
+        final List<FileSystemService.FileItem> items = fileSystemService.listDirectory(currentPath);
+        final File currentDir = new File(currentPath);
+
+        model.addAttribute("items", items);
+        model.addAttribute("currentPath", currentPath);
+        model.addAttribute("parentPath", currentDir.getParent());
+        model.addAttribute("targetInputId", targetInputId);
+
+        return "fragments/directory-explorer :: directory-explorer-content";
     }
 
     /**

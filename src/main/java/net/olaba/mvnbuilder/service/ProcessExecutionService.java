@@ -40,6 +40,20 @@ public class ProcessExecutionService {
      */
     @Async
     public CompletableFuture<CommandResult> executeCommand(final String label, final File directory, final String... command) {
+        return executeCommandWithJavaHome(label, directory, null, command);
+    }
+
+    /**
+     * Executes a command asynchronously with a custom Java Home environment variable.
+     * 
+     * @param label A descriptive label for the logs.
+     * @param directory The working directory.
+     * @param javaHome The path to JAVA_HOME (nullable).
+     * @param command The command and arguments.
+     * @return A CompletableFuture with command results.
+     */
+    @Async
+    public CompletableFuture<CommandResult> executeCommandWithJavaHome(final String label, final File directory, final String javaHome, final String... command) {
         return CompletableFuture.supplyAsync(() -> {
             final long startTime = System.currentTimeMillis();
             Process process = null;
@@ -49,6 +63,27 @@ public class ProcessExecutionService {
                 final ProcessBuilder pb = new ProcessBuilder(command);
                 pb.directory(directory);
                 pb.redirectErrorStream(true); // Merge stdout and stderr
+
+                // Inject custom JAVA_HOME and prepand its bin folder to PATH
+                if (javaHome != null && !javaHome.trim().isEmpty()) {
+                    final File jHomeDir = new File(javaHome.trim());
+                    if (jHomeDir.exists() && jHomeDir.isDirectory()) {
+                        pb.environment().put("JAVA_HOME", jHomeDir.getAbsolutePath());
+                        final String pathSeparator = File.pathSeparator;
+                        final String fileSeparator = File.separator;
+                        final String binPath = jHomeDir.getAbsolutePath() + fileSeparator + "bin";
+                        
+                        final String currentPath = pb.environment().get("PATH");
+                        if (currentPath != null) {
+                            pb.environment().put("PATH", binPath + pathSeparator + currentPath);
+                        } else {
+                            pb.environment().put("PATH", binPath);
+                        }
+                        sendLog(label, "Using JAVA_HOME override: " + jHomeDir.getAbsolutePath());
+                    } else {
+                        sendLog(label, "WARNING: Configured JAVA_HOME path does not exist: " + javaHome + ". Using system default Java.");
+                    }
+                }
 
                 process = pb.start();
                 activeProcesses.add(process);

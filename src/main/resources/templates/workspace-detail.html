@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title th:text="${workspace.name + ' - MvnBuilder'}">Workspace Detail</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="/js/global-spinner.js" defer></script>
+    <script src="/js/confirmation-modal.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -36,10 +39,16 @@
                 </svg>
             </a>
             <div class="flex items-center space-x-2 border-l pl-4">
-                <span class="text-xl font-bold tracking-tight text-gray-800" th:text="${workspace.name}">Workspace Name</span>
+                <span class="text-xl font-bold tracking-tight text-gray-800" th:text="${workspace.name}" th:attr="data-workspace-name=${workspace.name}">Workspace Name</span>
             </div>
         </div>
         <div class="flex items-center space-x-3">
+            <a href="/settings" class="text-gray-500 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all font-medium flex items-center space-x-1.5 text-sm border border-gray-200 bg-white">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
+                <span>Configuration</span>
+            </a>
             <button onclick="document.getElementById('edit-workspace-modal').classList.remove('hidden')" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-50 transition-all font-medium flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -78,6 +87,12 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
                 Export Order
+            </a>
+            <a th:href="@{/workspaces/{id}/export(id=${workspace.id})}" class="bg-indigo-50 text-indigo-600 border border-indigo-100 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-all font-medium flex items-center shadow-sm" title="Export full workspace including project paths">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export Workspace
             </a>
             
             <div class="h-6 w-px bg-gray-200 mx-2"></div>
@@ -249,6 +264,22 @@
                 <!-- Bulk Action Toolbar -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-center justify-between">
                     <div class="flex items-center space-x-4">
+                        <!-- Destructive Git Actions (left, always visible) -->
+                        <div class="flex items-center space-x-2 border-r pr-4">
+                            <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm" title="Unstage all staged changes in selected projects">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                </svg>
+                                <span>Unstage</span>
+                            </button>
+                            <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all shadow-sm" title="Discard all local unstaged changes in selected projects">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span>Discard Changes</span>
+                            </button>
+                        </div>
+                        <!-- Select All -->
                         <div class="flex items-center space-x-2 border-r pr-4">
                             <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                             <label for="select-all" class="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer">Select All</label>
@@ -265,18 +296,6 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                 </svg>
                                 <span>Pull</span>
-                            </button>
-                            <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-all shadow-sm" title="Unstage all staged changes">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                                </svg>
-                                <span>Unstage</span>
-                            </button>
-                            <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-all shadow-sm" title="Discard all local unstaged changes">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                <span>Discard Changes</span>
                             </button>
                             <button onclick="openBulkBranchModal()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Checkout branch for selected projects">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -313,7 +332,13 @@
                             <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="project-table-body" class="divide-y divide-gray-50">
+                    <tbody id="project-table-body" 
+                           th:fragment="project-table-body" 
+                           class="divide-y divide-gray-50"
+                           th:hx-get="${isAsyncRefresh} ? null : @{/workspaces/{id}/git-status-table(id=${workspace.id})}"
+                           th:hx-trigger="${isAsyncRefresh} ? null : 'load delay:100ms'"
+                           th:hx-swap="${isAsyncRefresh} ? null : 'outerHTML'"
+                           th:data-no-spinner="${isAsyncRefresh} ? null : 'true'">
                         <tr th:each="project : ${projects}" 
                             class="hover:bg-gray-50/50 transition-all duration-300 group cursor-move" 
                             th:classappend="${!project.enabled ? 'opacity-40 grayscale' : ''}"
@@ -346,6 +371,17 @@
                                     <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${project.version}">1.0.0</span>
                                 </div>
                                 <div class="text-xs text-gray-400 font-mono" th:text="${project.groupId}">group.id</div>
+                                <div class="mt-1 flex items-center space-x-1.5">
+                                    <button onclick="copyToClipboard(this)" 
+                                            th:attr="data-path=${project.absolutePath}" 
+                                            class="text-[10px] text-gray-500 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded px-2 py-0.5 font-mono flex items-center space-x-1 transition-all shadow-sm" 
+                                            title="Click to copy absolute path">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m-6 4h3" />
+                                        </svg>
+                                        <span class="path-text truncate max-w-[200px]" th:text="${project.absolutePath.substring(project.absolutePath.lastIndexOf('/') + 1)}">folder-name</span>
+                                    </button>
+                                </div>
                             </td>
                             <td class="px-6 py-4">
                                 <button th:attr="hx-get=@{/projects/{id}/branches(id=${project.id})}"
@@ -360,7 +396,7 @@
                                 </button>
                             </td>
                             <td class="px-6 py-4">
-                                <button th:unless="${project.modules.empty}"
+                                <button th:if="${project.hasChildren()}"
                                         th:attr="hx-get=@{/projects/{id}/children(id=${project.id})}"
                                         hx-target="#children-modal-content"
                                         hx-trigger="click"
@@ -371,54 +407,70 @@
                                     </svg>
                                     <span class="text-[10px] font-bold uppercase tracking-wider">View Recursive</span>
                                 </button>
-                                <span th:if="${project.modules.empty}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
+                                <span th:unless="${project.hasChildren()}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <div class="flex justify-end space-x-2">
-                                    <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
-                                            hx-target="#project-properties-modal-content"
-                                            hx-trigger="click"
-                                            onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
-                                            class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Project Properties">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                    </button>
-                                    <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
-                                            hx-target="#m2-modal-content"
-                                            hx-trigger="click"
-                                            onclick="document.getElementById('m2-modal').classList.remove('hidden')"
-                                            class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Local M2 Repository">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                        </svg>
-                                    </button>
-                                    <button th:attr="hx-post=@{/projects/{id}/fetch(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/fetch" title="Git Fetch">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/fetch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                                        </svg>
-                                        <span>Fetch</span>
-                                    </button>
-                                    <button th:attr="hx-post=@{/projects/{id}/pull(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/pull" title="Git Pull">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/pull:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                                        </svg>
-                                        <span>Pull</span>
-                                    </button>
-                                    <button th:attr="hx-post=@{/projects/{id}/build(id=${project.id})}" hx-swap="none" onclick="clearLogs()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md group/build" title="Maven Build">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white/80 group-hover/build:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <span>Build</span>
-                                    </button>
-                                    <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
-                                            hx-confirm="Are you sure you want to remove this project and all its submodules?"
-                                            class="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                    </button>
+                                <div class="flex justify-end items-center gap-1">
+                                        <button th:attr="hx-post=@{/projects/{id}/open-vscode(id=${project.id})}" 
+                                                hx-swap="none" 
+                                                class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" 
+                                                title="Open in VSCode">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                            </svg>
+                                        </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/open-explorer(id=${project.id})}" 
+                                                hx-swap="none" 
+                                                class="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all" 
+                                                title="Open in File Explorer">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                            </svg>
+                                        </button>
+                                        <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
+                                                hx-target="#project-properties-modal-content"
+                                                hx-trigger="click"
+                                                onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
+                                                class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Project Properties">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                        </button>
+                                        <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
+                                                hx-target="#m2-modal-content"
+                                                hx-trigger="click"
+                                                onclick="document.getElementById('m2-modal').classList.remove('hidden')"
+                                                class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Local M2 Repository">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                            </svg>
+                                        </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/fetch(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/fetch" title="Git Fetch">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/fetch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                                            </svg>
+                                            <span>Fetch</span>
+                                        </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/pull(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/pull" title="Git Pull">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/pull:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                            </svg>
+                                            <span>Pull</span>
+                                        </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/build(id=${project.id})}" hx-swap="none" onclick="clearLogs()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md group/build" title="Maven Build">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white/80 group-hover/build:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span>Build</span>
+                                        </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
+                                                hx-confirm="Are you sure you want to remove this project and all its submodules?"
+                                                class="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
                                 </div>
                             </td>
                         </tr>
@@ -448,13 +500,35 @@
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Base Directory Path</label>
-                        <input type="text" name="basePath" th:value="${workspace.basePath}" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                        <div class="flex gap-2">
+                            <input type="text" name="basePath" id="edit-workspace-base-path" th:value="${workspace.basePath}" class="flex-grow px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                            <button type="button"
+                                    th:attr="hx-get=@{/workspaces/explorer(path=${workspace.basePath}, targetInputId='edit-workspace-base-path')}"
+                                    hx-target="#directory-explorer-modal-content"
+                                    onclick="openDirectoryExplorerModal()"
+                                    class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-xl border border-gray-200 font-semibold text-sm transition-all flex items-center shadow-sm">
+                                Browse
+                            </button>
+                        </div>
                         <p class="mt-2 text-xs text-amber-600 font-medium flex items-center">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
                             Changing the path will re-scan all projects.
                         </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Java Version (optional)</label>
+                        <select name="javaInstallationId" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm">
+                            <option value="0">— Use system default —</option>
+                            <option th:each="ji : ${javaInstallations}"
+                                    th:value="${ji.id}"
+                                    th:text="${ji.name} + ' (' + ${ji.javaHome} + ')'"
+                                    th:selected="${workspace.javaInstallation != null and workspace.javaInstallation.id == ji.id}">
+                                JDK 17
+                            </option>
+                        </select>
+                        <p class="mt-1.5 text-xs text-gray-400">Overrides the global active Java version for this workspace's builds.</p>
                     </div>
                     <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-indigo-200 shadow-lg">
                         Save Changes
@@ -475,8 +549,11 @@
 
                 <div class="pt-6 border-t border-gray-100">
                     <h4 class="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">Danger Zone</h4>
-                    <form th:action="@{/workspaces/{id}/delete(id=${workspace.id})}" method="POST" onsubmit="return confirm('Are you sure you want to delete this workspace? This cannot be undone.');">
-                        <button type="submit" class="w-full bg-red-50 text-red-600 hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
+                    <form th:action="@{/workspaces/{id}/delete(id=${workspace.id})}" method="POST"
+                          th:id="'delete-workspace-form-' + ${workspace.id}">
+                        <button type="button"
+                                th:attr="onclick='confirmDeleteWorkspaceDetail(' + ${workspace.id} + ', \'' + ${#strings.escapeJava(workspace.name)} + '\');'"
+                                class="w-full bg-red-50 text-red-600 hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
                             Delete Workspace
                         </button>
                     </form>
@@ -559,6 +636,17 @@
         <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all overflow-hidden">
             <div id="explorer-modal-content">
                 <!-- Content loaded via HTMX -->
+                <div class="p-8 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Directory Explorer Modal -->
+    <div id="directory-explorer-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+            <div id="directory-explorer-modal-content">
                 <div class="p-8 text-center">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
                 </div>
@@ -898,6 +986,70 @@
             switchTab('Global');
         }
 
+        function copyToClipboard(btn) {
+            const path = btn.getAttribute('data-path');
+            if (!path) return;
+            navigator.clipboard.writeText(path).then(() => {
+                const textSpan = btn.querySelector('.path-text');
+                const originalText = textSpan.innerText;
+                textSpan.innerText = 'Copied!';
+                btn.classList.add('bg-green-100', 'text-green-800', 'border-green-300');
+                btn.classList.remove('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                setTimeout(() => {
+                    textSpan.innerText = originalText;
+                    btn.classList.remove('bg-green-100', 'text-green-800', 'border-green-300');
+                    btn.classList.add('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+
+        function confirmUnstage(projectId, projectName) {
+            ConfirmationModal.show({
+                title: 'Unstage cambios',
+                message: `Se eliminarán todos los ficheros del <strong>staging area</strong> del proyecto <strong>${projectName}</strong>.<br><br>Esta acción es reversible (los cambios seguirán en el working tree).`,
+                confirmLabel: 'Unstage',
+                danger: false,
+                onConfirm: () => {
+                    fetch(`/projects/${projectId}/git/unstage`, { method: 'POST' })
+                        .then(r => { if (!r.ok) r.text().then(t => console.error('Unstage failed:', t)); })
+                        .catch(e => console.error('Unstage error:', e));
+                }
+            });
+        }
+
+        function confirmDiscard(projectId, projectName) {
+            const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
+            ConfirmationModal.show({
+                title: '¿Descartar cambios?',
+                message: `Se descartarán <strong>todos los cambios no staged</strong> del proyecto <strong>${projectName}</strong>.<br><br>⚠️ Esta acción <strong>no se puede deshacer</strong>.`,
+                confirmLabel: 'Descartar',
+                requireTyped: workspaceName,
+                requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                danger: true,
+                onConfirm: () => {
+                    fetch(`/projects/${projectId}/git/discard`, { method: 'POST' })
+                        .then(r => { if (!r.ok) r.text().then(t => console.error('Discard failed:', t)); })
+                        .catch(e => console.error('Discard error:', e));
+                }
+            });
+        }
+
+        function confirmDeleteWorkspaceDetail(workspaceId, workspaceName) {
+            ConfirmationModal.show({
+                title: '¿Eliminar workspace?',
+                message: `Esta acción <strong>no se puede deshacer</strong>. Se eliminará el workspace <strong>${workspaceName}</strong> y toda su configuración.`,
+                confirmLabel: 'Eliminar',
+                requireTyped: workspaceName,
+                requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                danger: true,
+                onConfirm: () => {
+                    document.getElementById(`delete-workspace-form-${workspaceId}`).submit();
+                }
+            });
+        }
+
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
@@ -951,14 +1103,50 @@
             }
 
             if (selectedIds.length === 0) {
-                alert('Please select at least one project.');
+                ConfirmationModal.show({
+                    title: 'Sin proyectos seleccionados',
+                    message: 'Selecciona al menos un proyecto de la lista antes de ejecutar esta acción.',
+                    confirmLabel: 'Entendido',
+                    danger: false,
+                    onConfirm: () => {}
+                });
                 return;
             }
 
-            if (action === 'checkout-discard' && !confirm('Are you sure you want to discard all local unstaged changes in the selected projects? This cannot be undone.')) {
+            if (action === 'restore-staged') {
+                ConfirmationModal.show({
+                    title: '¿Unstage de los proyectos seleccionados?',
+                    message: `Se eliminarán todos los ficheros del <strong>staging area</strong> en los <strong>${selectedIds.length}</strong> proyecto(s) seleccionado(s).<br><br>Los cambios seguirán en el working tree y esta acción es reversible.`,
+                    confirmLabel: 'Unstage',
+                    danger: false,
+                    onConfirm: () => _executeBulkActionRequest(action, selectedIds)
+                });
                 return;
             }
 
+            if (action === 'checkout-discard') {
+                const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
+                ConfirmationModal.show({
+                    title: '¿Descartar cambios en los proyectos seleccionados?',
+                    message: `Se descartarán <strong>todos los cambios no staged</strong> en los <strong>${selectedIds.length}</strong> proyecto(s) seleccionado(s).<br><br>⚠️ Esta acción <strong>no se puede deshacer</strong>.`,
+                    confirmLabel: 'Descartar',
+                    requireTyped: workspaceName,
+                    requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                    danger: true,
+                    onConfirm: () => _executeBulkActionRequest(action, selectedIds)
+                });
+                return;
+            }
+
+            if (action === 'build') {
+                clearLogs();
+                document.getElementById('retry-container').classList.add('hidden');
+            }
+
+            _executeBulkActionRequest(action, selectedIds);
+        }
+
+        function _executeBulkActionRequest(action, selectedIds) {
             if (action === 'build') {
                 clearLogs();
                 document.getElementById('retry-container').classList.add('hidden');
@@ -973,7 +1161,13 @@
                 body: formData
             }).then(response => {
                 if (!response.ok) {
-                    alert('Error executing bulk action');
+                    ConfirmationModal.show({
+                        title: 'Error al ejecutar la acción',
+                        message: 'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.',
+                        confirmLabel: 'Cerrar',
+                        danger: true,
+                        onConfirm: () => {}
+                    });
                 }
             });
         }
@@ -998,6 +1192,23 @@
                     window.location.reload();
                 } else {
                     alert('Error adding projects');
+                }
+            });
+        }
+
+        function addCustomProjectPath(path) {
+            if (!path) return;
+            const formData = new FormData();
+            formData.append('paths', path);
+
+            fetch(`/workspaces/${workspaceId}/explorer/add`, {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Error adding project: ' + path);
                 }
             });
         }
@@ -1068,6 +1279,17 @@
             });
         }
 
+        function openDirectoryExplorerModal() {
+            document.getElementById('directory-explorer-modal').classList.remove('hidden');
+        }
+        function closeDirectoryExplorerModal() {
+            document.getElementById('directory-explorer-modal').classList.add('hidden');
+        }
+        function selectWorkspaceDirectory(path, targetInputId) {
+            document.getElementById(targetInputId).value = path;
+            closeDirectoryExplorerModal();
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const branchModal = document.getElementById('branch-modal');
@@ -1078,6 +1300,7 @@
             const profileModal = document.getElementById('profile-manager-modal');
             const projectPropertiesModal = document.getElementById('project-properties-modal');
             const bulkBranchModal = document.getElementById('bulk-branch-modal');
+            const directoryExplorerModal = document.getElementById('directory-explorer-modal');
             if (event.target == branchModal) branchModal.classList.add('hidden');
             if (event.target == editModal) editModal.classList.add('hidden');
             if (event.target == m2Modal) m2Modal.classList.add('hidden');
@@ -1086,6 +1309,7 @@
             if (event.target == profileModal) profileModal.classList.add('hidden');
             if (event.target == projectPropertiesModal) projectPropertiesModal.classList.add('hidden');
             if (event.target == bulkBranchModal) bulkBranchModal.classList.add('hidden');
+            if (event.target == directoryExplorerModal) directoryExplorerModal.classList.add('hidden');
         }
 
         // SortableJS init
