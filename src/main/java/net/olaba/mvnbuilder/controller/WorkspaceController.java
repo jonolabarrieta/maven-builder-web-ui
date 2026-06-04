@@ -277,6 +277,50 @@ public class WorkspaceController {
     }
 
     /**
+     * Exports the full workspace configuration (projects in order) as a text file.
+     * 
+     * @param id The workspace ID.
+     * @return A plain text response containing workspace configuration and project paths.
+     */
+    @GetMapping("/workspaces/{id}/export")
+    public ResponseEntity<String> exportWorkspace(final @PathVariable Long id) {
+        final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
+        final String content = workspaceService.exportWorkspace(id);
+        
+        final String safeName = workspace.getName().replaceAll("[^a-zA-Z0-9-_]", "_");
+        
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"workspace-" + safeName + ".txt\"")
+                .contentType(org.springframework.http.MediaType.TEXT_PLAIN)
+                .body(content);
+    }
+
+    /**
+     * Imports a workspace from a plain text configuration file.
+     * 
+     * @param file The uploaded text file.
+     * @param redirectAttributes Redirect attributes.
+     * @return Redirect to home or details.
+     */
+    @PostMapping("/workspaces/import")
+    public String importWorkspace(final @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+                                  final RedirectAttributes redirectAttributes) {
+        if (file.isEmpty()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "Uploaded file is empty");
+            return "redirect:/";
+        }
+        try {
+            final String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            final Workspace ws = workspaceService.importWorkspace(content);
+            return "redirect:/workspaces/" + ws.getId();
+        } catch (final Exception e) {
+            log.error("Failed to import workspace: {}", e.getMessage(), e);
+            redirectAttributes.addFlashAttribute("errorMessage", "Failed to import workspace: " + e.getMessage());
+            return "redirect:/";
+        }
+    }
+
+    /**
      * Executes bulk branch checkout/creation on multiple projects.
      * 
      * @param id         The workspace ID.
@@ -445,6 +489,46 @@ public class WorkspaceController {
     public void pullProject(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         buildService.gitPull(project);
+    }
+
+    /**
+     * Unstages all staged changes for a project via Git (git restore --staged .).
+     * 
+     * @param id The project ID.
+     * @return A success or error response.
+     */
+    @PostMapping("/projects/{id}/git/unstage")
+    @ResponseBody
+    public ResponseEntity<String> unstageProject(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        log.info("Unstaging changes for project '{}' (id={})", project.getArtifactId(), id);
+        try {
+            buildService.gitUnstage(project);
+            return ResponseEntity.ok("Unstaged successfully");
+        } catch (final Exception e) {
+            log.error("Failed to unstage project '{}': {}", project.getArtifactId(), e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+
+    /**
+     * Discards all local unstaged changes for a project via Git (git checkout -- .).
+     * 
+     * @param id The project ID.
+     * @return A success or error response.
+     */
+    @PostMapping("/projects/{id}/git/discard")
+    @ResponseBody
+    public ResponseEntity<String> discardProjectChanges(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        log.info("Discarding changes for project '{}' (id={})", project.getArtifactId(), id);
+        try {
+            buildService.gitDiscard(project);
+            return ResponseEntity.ok("Changes discarded successfully");
+        } catch (final Exception e) {
+            log.error("Failed to discard changes for project '{}': {}", project.getArtifactId(), e.getMessage());
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
     }
 
     /**

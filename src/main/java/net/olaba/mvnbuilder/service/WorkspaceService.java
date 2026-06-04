@@ -542,4 +542,102 @@ public class WorkspaceService {
         }
         return null;
     }
+
+    /**
+     * Exports a workspace configuration as a plain text string.
+     * 
+     * @param workspaceId The ID of the workspace to export.
+     * @return A plain text representation of the workspace.
+     */
+    @Transactional(readOnly = true)
+    public String exportWorkspace(final Long workspaceId) {
+        final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
+        final StringBuilder sb = new StringBuilder();
+        
+        sb.append("Workspace: ").append(workspace.getName()).append("\n");
+        if (workspace.getBasePath() != null) {
+            sb.append("BasePath: ").append(workspace.getBasePath()).append("\n");
+        }
+        for (final String excludedPath : workspace.getExcludedPaths()) {
+            sb.append("Exclude: ").append(excludedPath).append("\n");
+        }
+        sb.append("\n");
+        sb.append("# Projects in execution order (one path per line)\n");
+        
+        final List<MavenProject> projects = mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
+        for (final MavenProject project : projects) {
+            if (project.getAbsolutePath() != null) {
+                sb.append(project.getAbsolutePath()).append("\n");
+            } else if (project.getRelativePath() != null && workspace.getBasePath() != null) {
+                final File absFile = new File(new File(workspace.getBasePath()), project.getRelativePath());
+                sb.append(absFile.getAbsolutePath()).append("\n");
+            }
+        }
+        
+        return sb.toString();
+    }
+
+    /**
+     * Imports a workspace from a plain text configuration string.
+     * 
+     * @param textContent The plain text configuration.
+     * @return The created workspace.
+     */
+    @Transactional
+    public Workspace importWorkspace(final String textContent) {
+        String name = "Imported Workspace";
+        String basePath = null;
+        final List<String> excludedPaths = new ArrayList<>();
+        final List<String> projectPaths = new ArrayList<>();
+        
+        final String[] lines = textContent.split("\\r?\\n");
+        for (final String line : lines) {
+            final String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            
+            if (trimmed.startsWith("Workspace:")) {
+                name = trimmed.substring("Workspace:".length()).trim();
+            } else if (trimmed.startsWith("BasePath:")) {
+                basePath = trimmed.substring("BasePath:".length()).trim();
+            } else if (trimmed.startsWith("Exclude:")) {
+                excludedPaths.add(trimmed.substring("Exclude:".length()).trim());
+            } else {
+                projectPaths.add(trimmed);
+            }
+        }
+        
+        Workspace workspace = Workspace.builder()
+                .withName(name)
+                .withBasePath(basePath)
+                .build();
+        workspace.getExcludedPaths().addAll(excludedPaths);
+        workspace = workspaceRepository.save(workspace);
+        
+        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+        int executionOrder = 0;
+        for (final String path : projectPaths) {
+            File projectDir = new File(path);
+            if (!projectDir.isAbsolute() && basePath != null) {
+                projectDir = new File(new File(basePath), path);
+            }
+            
+            final File pomFile = new File(projectDir, "pom.xml");
+            if (pomFile.exists()) {
+                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                projectData.setWorkspace(workspace);
+                projectData.setExecutionOrder(executionOrder++);
+                
+                final File gitRoot = findGitRoot(projectDir);
+                final File cacheKey = gitRoot != null ? gitRoot : projectDir;
+                final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+                projectData.setGitBranch(branch);
+                
+                mavenProjectRepository.save(projectData);
+            }
+        }
+        
+        return workspace;
+    }
 }
