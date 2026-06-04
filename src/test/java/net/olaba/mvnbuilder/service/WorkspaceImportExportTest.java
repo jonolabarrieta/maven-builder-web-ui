@@ -107,7 +107,7 @@ class WorkspaceImportExportTest {
         assertEquals(1, imported.getExcludedPaths().size());
         assertEquals("path/to/exclude1", imported.getExcludedPaths().get(0));
 
-        verify(mavenProjectRepository, times(1)).save(any(MavenProject.class));
+        verify(mavenProjectRepository, times(1)).saveAll(any());
         
         // Clean up temp files
         java.nio.file.Files.delete(tempProj1.resolve("pom.xml"));

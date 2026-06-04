@@ -12,10 +12,22 @@ permissions:
 jobs:
   build:
     name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+            suffix: linux-amd64
+          - os: windows-latest
+            runner: windows-latest
+            suffix: windows-amd64.exe
+          - os: macos-13
+            runner: macos-13
+            suffix: macos-amd64
+          - os: macos-14
+            runner: macos-14
+            suffix: macos-arm64
     
     steps:
       - name: Checkout repository
@@ -47,12 +59,13 @@ jobs:
         run: |
           mkdir -p release-artifacts
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/mvn-builder.exe release-artifacts/mvn-builder-windows-amd64.exe
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            cp target/mvn-builder release-artifacts/mvn-builder-macos-amd64
+            cp target/mvn-builder.exe release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
           else
-            cp target/mvn-builder release-artifacts/mvn-builder-linux-amd64
-            cp target/mvn-builder-*.jar release-artifacts/mvn-builder.jar
+            cp target/mvn-builder release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
+          fi
+          
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            cp target/mvn-builder-*.jar release-artifacts/mvn-builder-${{ github.ref_name }}.jar
           fi
 
       - name: Upload to Release

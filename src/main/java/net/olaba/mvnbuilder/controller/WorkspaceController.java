@@ -136,12 +136,28 @@ public class WorkspaceController {
      */
     @GetMapping("/workspaces/{id}")
     public String viewWorkspace(final @PathVariable Long id, final Model model) {
-        workspaceService.refreshGitStatus(id);
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         model.addAttribute("workspace", workspace);
         model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
         model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "workspace-detail";
+    }
+
+    /**
+     * Asynchronously refreshes the Git branch status and returns the project table body fragment.
+     * 
+     * @param id    The workspace ID.
+     * @param model The UI model.
+     * @return The project table body fragment template path.
+     */
+    @GetMapping("/workspaces/{id}/git-status-table")
+    public String getGitStatusTable(final @PathVariable Long id, final Model model) {
+        log.info("Asynchronously refreshing Git status for workspace ID {}", id);
+        workspaceService.refreshGitStatus(id);
+        model.addAttribute("workspace", workspaceService.getWorkspace(id).orElseThrow());
+        model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
+        model.addAttribute("isAsyncRefresh", true);
+        return "workspace-detail :: project-table-body";
     }
 
     /**

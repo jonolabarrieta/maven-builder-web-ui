@@ -1,8 +1,5 @@
-# parallel-git-operations Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change parallel-git-operations. Update Purpose after archive.
-## Requirements
 ### Requirement: Parallel Git Operations
 The system SHALL execute Git operations (fetch, pull, checkout, discard, and restore/unstage) in parallel across selected projects when a bulk Git action is triggered, and all database updates resulting from Git operations SHALL run in isolated, short transactions to prevent table lock-ups.
 
@@ -21,4 +18,3 @@ The system SHALL execute Git operations (fetch, pull, checkout, discard, and res
 #### Scenario: Sequential Build Execution
 - **WHEN** the user selects projects A, B, and C and triggers a bulk "Build" action
 - **THEN** the system SHALL build A, B, and C sequentially in the defined execution/topological order, ensuring dependency order is strictly respected.
-

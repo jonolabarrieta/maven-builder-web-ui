@@ -191,7 +191,6 @@ public class WorkspaceService {
      * 
      * @param workspace The workspace to scan.
      */
-    @Transactional
     public void scanAndImportProjects(final Workspace workspace) {
         if (workspace.getBasePath() == null) {
             return;
@@ -207,6 +206,14 @@ public class WorkspaceService {
         // Get excluded paths
         final Set<String> excludedPaths = new HashSet<>(workspace.getExcludedPaths());
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+
+        // Load existing projects for the workspace first in a single query
+        final List<MavenProject> existingProjects = mavenProjectRepository
+                .findByWorkspaceIdOrderByExecutionOrderAsc(workspace.getId());
+        final java.util.Map<String, MavenProject> existingMap = existingProjects.stream()
+                .collect(Collectors.toMap(MavenProject::getRelativePath, p -> p));
+
+        final List<MavenProject> projectsToSave = new ArrayList<>();
 
         for (final File pomFile : pomFiles) {
             // Calculate relative path of this pom
@@ -227,14 +234,35 @@ public class WorkspaceService {
             }
 
             if (!excluded) {
-                importProject(workspace, pomFile, gitRootBranchCache);
+                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                final MavenProject existing = existingMap.get(projectData.getRelativePath());
+
+                final MavenProject projectToSave;
+                if (existing != null) {
+                    projectToSave = existing;
+                    projectToSave.setArtifactId(projectData.getArtifactId());
+                    projectToSave.setGroupId(projectData.getGroupId());
+                    projectToSave.setVersion(projectData.getVersion());
+                    projectToSave.setModules(projectData.getModules());
+                    projectToSave.setInternalDependencies(projectData.getInternalDependencies());
+                    projectToSave.setAbsolutePath(projectData.getAbsolutePath());
+                    projectToSave.setParentKey(projectData.getParentKey());
+                } else {
+                    projectToSave = projectData;
+                    projectToSave.setWorkspace(workspace);
+                }
+
+                final File projectDir = pomFile.getParentFile();
+                final File gitRoot = findGitRoot(projectDir);
+                final File cacheKey = gitRoot != null ? gitRoot : projectDir;
+
+                final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+                projectToSave.setGitBranch(branch);
+                projectsToSave.add(projectToSave);
             }
         }
 
         // Scan manually added parent projects that reside outside the base path
-        final List<MavenProject> currentProjects = mavenProjectRepository
-                .findByWorkspaceIdOrderByExecutionOrderAsc(workspace.getId());
-        
         final String baseAbsNormalized;
         try {
             baseAbsNormalized = baseDir.getAbsoluteFile().toPath().normalize().toString();
@@ -242,8 +270,8 @@ public class WorkspaceService {
             return;
         }
 
-        final List<MavenProject> externalParents = currentProjects.stream()
-                .filter(p -> isParentProject(p, currentProjects))
+        final List<MavenProject> externalParents = existingProjects.stream()
+                .filter(p -> isParentProject(p, existingProjects))
                 .filter(p -> {
                     if (p.getAbsolutePath() == null) {
                         return false;
@@ -263,9 +291,37 @@ public class WorkspaceService {
                 final List<File> extPomFiles = new ArrayList<>();
                 findPomFiles(extDir, extPomFiles);
                 for (final File pomFile : extPomFiles) {
-                    importProject(workspace, pomFile, gitRootBranchCache);
+                    final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                    final MavenProject existing = existingMap.get(projectData.getRelativePath());
+
+                    final MavenProject projectToSave;
+                    if (existing != null) {
+                        projectToSave = existing;
+                        projectToSave.setArtifactId(projectData.getArtifactId());
+                        projectToSave.setGroupId(projectData.getGroupId());
+                        projectToSave.setVersion(projectData.getVersion());
+                        projectToSave.setModules(projectData.getModules());
+                        projectToSave.setInternalDependencies(projectData.getInternalDependencies());
+                        projectToSave.setAbsolutePath(projectData.getAbsolutePath());
+                        projectToSave.setParentKey(projectData.getParentKey());
+                    } else {
+                        projectToSave = projectData;
+                        projectToSave.setWorkspace(workspace);
+                    }
+
+                    final File projectDir = pomFile.getParentFile();
+                    final File gitRoot = findGitRoot(projectDir);
+                    final File cacheKey = gitRoot != null ? gitRoot : projectDir;
+
+                    final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+                    projectToSave.setGitBranch(branch);
+                    projectsToSave.add(projectToSave);
                 }
             }
+        }
+
+        if (!projectsToSave.isEmpty()) {
+            mavenProjectRepository.saveAll(projectsToSave);
         }
     }
 
@@ -275,7 +331,6 @@ public class WorkspaceService {
      * @param workspaceId The workspace ID.
      * @param projectPath The directory path containing a pom.xml.
      */
-    @Transactional
     public void addProjectByPath(final Long workspaceId, final String projectPath) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         final File projectDir = new File(projectPath);
@@ -284,58 +339,50 @@ public class WorkspaceService {
         }
         final List<File> pomFiles = new ArrayList<>();
         findPomFiles(projectDir, pomFiles);
+
+        // Load existing projects for the workspace first in a single query
+        final List<MavenProject> existingProjects = mavenProjectRepository
+                .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
+        final java.util.Map<String, MavenProject> existingMap = existingProjects.stream()
+                .collect(Collectors.toMap(MavenProject::getRelativePath, p -> p));
+
+        final List<MavenProject> projectsToSave = new ArrayList<>();
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+
         for (final File pomFile : pomFiles) {
-            importProject(workspace, pomFile, gitRootBranchCache);
+            final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+            final MavenProject existing = existingMap.get(projectData.getRelativePath());
+
+            final MavenProject projectToSave;
+            if (existing != null) {
+                projectToSave = existing;
+                projectToSave.setArtifactId(projectData.getArtifactId());
+                projectToSave.setGroupId(projectData.getGroupId());
+                projectToSave.setVersion(projectData.getVersion());
+                projectToSave.setModules(projectData.getModules());
+                projectToSave.setInternalDependencies(projectData.getInternalDependencies());
+                projectToSave.setAbsolutePath(projectData.getAbsolutePath());
+                projectToSave.setParentKey(projectData.getParentKey());
+            } else {
+                projectToSave = projectData;
+                projectToSave.setWorkspace(workspace);
+            }
+
+            final File gitDir = pomFile.getParentFile();
+            final File gitRoot = findGitRoot(gitDir);
+            final File cacheKey = gitRoot != null ? gitRoot : gitDir;
+
+            final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
+            projectToSave.setGitBranch(branch);
+            projectsToSave.add(projectToSave);
+        }
+
+        if (!projectsToSave.isEmpty()) {
+            mavenProjectRepository.saveAll(projectsToSave);
         }
     }
 
-    /**
-     * Imports or updates a single Maven project into a workspace.
-     * 
-     * @param workspace The workspace.
-     * @param pomFile   The pom.xml file.
-     */
-    private void importProject(final Workspace workspace, final File pomFile) {
-        importProject(workspace, pomFile, new java.util.HashMap<>());
-    }
 
-    /**
-     * Imports or updates a single Maven project into a workspace, using a cache for Git branches.
-     * 
-     * @param workspace   The workspace.
-     * @param pomFile     The pom.xml file.
-     * @param branchCache The Git root branch cache.
-     */
-    private void importProject(final Workspace workspace, final File pomFile, final java.util.Map<File, String> branchCache) {
-        final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
-
-        final Optional<MavenProject> existingOpt = mavenProjectRepository
-                .findByWorkspaceIdAndRelativePath(workspace.getId(), projectData.getRelativePath());
-
-        final MavenProject projectToSave;
-        if (existingOpt.isPresent()) {
-            projectToSave = existingOpt.get();
-            projectToSave.setArtifactId(projectData.getArtifactId());
-            projectToSave.setGroupId(projectData.getGroupId());
-            projectToSave.setVersion(projectData.getVersion());
-            projectToSave.setModules(projectData.getModules());
-            projectToSave.setInternalDependencies(projectData.getInternalDependencies());
-            projectToSave.setAbsolutePath(projectData.getAbsolutePath());
-            projectToSave.setParentKey(projectData.getParentKey());
-        } else {
-            projectToSave = projectData;
-            projectToSave.setWorkspace(workspace);
-        }
-
-        final File projectDir = pomFile.getParentFile();
-        final File gitRoot = findGitRoot(projectDir);
-        final File cacheKey = gitRoot != null ? gitRoot : projectDir;
-
-        final String branch = branchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
-        projectToSave.setGitBranch(branch);
-        mavenProjectRepository.save(projectToSave);
-    }
 
     /**
      * Recursively finds all pom.xml files starting from a directory.
@@ -411,7 +458,6 @@ public class WorkspaceService {
      * 
      * @param workspaceId The workspace ID.
      */
-    @Transactional
     public void refreshGitStatus(final Long workspaceId) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         if (workspace.getBasePath() == null) {
@@ -449,7 +495,6 @@ public class WorkspaceService {
      * 
      * @param workspaceId The workspace ID.
      */
-    @Transactional
     public void refreshWorkspace(final Long workspaceId) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         scanAndImportProjects(workspace);
@@ -583,7 +628,6 @@ public class WorkspaceService {
      * @param textContent The plain text configuration.
      * @return The created workspace.
      */
-    @Transactional
     public Workspace importWorkspace(final String textContent) {
         String name = "Imported Workspace";
         String basePath = null;
@@ -617,6 +661,8 @@ public class WorkspaceService {
         
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
         int executionOrder = 0;
+        final List<MavenProject> projectsToSave = new ArrayList<>();
+
         for (final String path : projectPaths) {
             File projectDir = new File(path);
             if (!projectDir.isAbsolute() && basePath != null) {
@@ -634,8 +680,12 @@ public class WorkspaceService {
                 final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
                 projectData.setGitBranch(branch);
                 
-                mavenProjectRepository.save(projectData);
+                projectsToSave.add(projectData);
             }
+        }
+
+        if (!projectsToSave.isEmpty()) {
+            mavenProjectRepository.saveAll(projectsToSave);
         }
         
         return workspace;

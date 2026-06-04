@@ -332,7 +332,13 @@
                             <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="project-table-body" class="divide-y divide-gray-50">
+                    <tbody id="project-table-body" 
+                           th:fragment="project-table-body" 
+                           class="divide-y divide-gray-50"
+                           th:hx-get="${isAsyncRefresh} ? null : @{/workspaces/{id}/git-status-table(id=${workspace.id})}"
+                           th:hx-trigger="${isAsyncRefresh} ? null : 'load delay:100ms'"
+                           th:hx-swap="${isAsyncRefresh} ? null : 'outerHTML'"
+                           th:data-no-spinner="${isAsyncRefresh} ? null : 'true'">
                         <tr th:each="project : ${projects}" 
                             class="hover:bg-gray-50/50 transition-all duration-300 group cursor-move" 
                             th:classappend="${!project.enabled ? 'opacity-40 grayscale' : ''}"

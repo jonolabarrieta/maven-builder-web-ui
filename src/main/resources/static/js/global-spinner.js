@@ -81,11 +81,17 @@
     }
 
     // --- HTMX Integration ---
-    document.addEventListener('htmx:beforeRequest', function() {
+    document.addEventListener('htmx:beforeRequest', function(event) {
+        if (event.detail && event.detail.elt && typeof event.detail.elt.closest === 'function' && event.detail.elt.closest('[data-no-spinner]')) {
+            return;
+        }
         updateActiveRequests(1);
     });
 
-    document.addEventListener('htmx:afterRequest', function() {
+    document.addEventListener('htmx:afterRequest', function(event) {
+        if (event.detail && event.detail.elt && typeof event.detail.elt.closest === 'function' && event.detail.elt.closest('[data-no-spinner]')) {
+            return;
+        }
         updateActiveRequests(-1);
     });
 
