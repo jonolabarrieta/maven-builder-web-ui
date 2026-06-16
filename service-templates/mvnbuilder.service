@@ -1,0 +1,14 @@
+[Unit]
+Description=MvnBuilder Web UI Service
+After=graphical-session.target
+
+[Service]
+Type=simple
+# Required environment variables for AWT SystemTray to hook into display
+Environment=DISPLAY=:0
+# Modify this path to the absolute path of java and your compiled jar file
+ExecStart=/usr/bin/java -Djava.awt.headless=false -jar /mnt/datos/code/documentos/proyectos/mvnBuilder/target/mvn-builder-1.1.0.jar
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
