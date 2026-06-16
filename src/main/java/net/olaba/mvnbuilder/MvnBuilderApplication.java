@@ -5,6 +5,8 @@ import net.olaba.mvnbuilder.model.BuildFailure;
 import net.olaba.mvnbuilder.model.LogMessage;
 import net.olaba.mvnbuilder.model.M2ProjectInfo;
 import net.olaba.mvnbuilder.model.ProcessInfo;
+import net.olaba.mvnbuilder.model.AssetInfo;
+import net.olaba.mvnbuilder.model.UpdateInfo;
 import net.olaba.mvnbuilder.service.FileSystemService;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.boot.SpringApplication;
@@ -33,7 +35,9 @@ import java.nio.file.Paths;
     M2ProjectInfo.class,
     BuildFailure.class,
     LogMessage.class,
-    ProcessInfo.class
+    ProcessInfo.class,
+    AssetInfo.class,
+    UpdateInfo.class
 })
 public class MvnBuilderApplication {
 

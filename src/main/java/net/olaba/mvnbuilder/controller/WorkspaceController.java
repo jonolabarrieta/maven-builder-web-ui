@@ -37,10 +37,16 @@ public class WorkspaceController {
     private final MavenService mavenService;
     private final SystemSettingService systemSettingService;
     private final net.olaba.mvnbuilder.repository.JavaInstallationRepository javaInstallationRepository;
+    private final UpdateService updateService;
 
     @ModelAttribute("availableGroupIds")
     public List<String> getAvailableGroupIds() {
         return mavenRepositoryService.getM2TopLevelFolders();
+    }
+
+    @ModelAttribute("currentVersion")
+    public String getCurrentVersion() {
+        return updateService.getCurrentVersion();
     }
 
     /**
