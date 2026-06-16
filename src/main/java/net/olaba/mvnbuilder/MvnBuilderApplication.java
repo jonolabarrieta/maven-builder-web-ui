@@ -47,13 +47,7 @@ public class MvnBuilderApplication {
      * @param args Command line arguments.
      */
     public static void main(final String[] args) {
-        boolean runAsService = false;
-        for (final String arg : args) {
-            if ("--service".equalsIgnoreCase(arg) || "service".equalsIgnoreCase(arg) || "-service".equalsIgnoreCase(arg)) {
-                runAsService = true;
-                break;
-            }
-        }
+        boolean runAsService = shouldRunAsService(args, isPackagedJar());
 
         if (runAsService) {
             // Register, start as a background service/daemon, and immediately exit foreground process
@@ -69,10 +63,55 @@ public class MvnBuilderApplication {
     }
 
     /**
+     * Determines whether the application should run as a background service/daemon.
+     *
+     * @param args The command line arguments.
+     * @param isJar True if running from a packaged JAR file.
+     * @return True if it should run as a service, false otherwise.
+     */
+    static boolean shouldRunAsService(final String[] args, final boolean isJar) {
+        boolean runAsService = isJar;
+        for (final String arg : args) {
+            if ("--no-service".equalsIgnoreCase(arg) || "no-service".equalsIgnoreCase(arg) || "-no-service".equalsIgnoreCase(arg)) {
+                runAsService = false;
+                break;
+            }
+        }
+        return runAsService;
+    }
+
+    /**
      * Attempts to register the application to start automatically in the background
      * on OS startup, if running from a packaged JAR file.
      */
     private static void registerAndStartService() {
+        final String absolutePath = getPackagedJarPath();
+        if (absolutePath == null) {
+            System.out.println("Running in development/IDE mode (non-JAR). Skipping service registration.");
+            return;
+        }
+
+        try {
+            final String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                registerWindowsAutostart(absolutePath);
+            } else if (os.contains("nix") || os.contains("nux")) {
+                registerLinuxAutostart(absolutePath);
+            } else if (os.contains("mac")) {
+                registerMacAutostart(absolutePath);
+            }
+        } catch (final Exception e) {
+            System.err.println("Failed to register background service: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Gets the absolute path to the packaged JAR file if the application is running from one,
+     * or null if running in development/IDE mode (non-JAR).
+     *
+     * @return The absolute path to the JAR, or null.
+     */
+    private static String getPackagedJarPath() {
         try {
             final URL location = MvnBuilderApplication.class.getProtectionDomain().getCodeSource().getLocation();
             String pathString = location.toString();
@@ -81,6 +120,8 @@ public class MvnBuilderApplication {
             final int jarIndex = pathString.toLowerCase().indexOf(".jar");
             if (jarIndex != -1) {
                 pathString = pathString.substring(0, jarIndex + 4);
+            } else {
+                return null;
             }
 
             // Strip protocol prefixes (nested:, file:, jar:file:)
@@ -102,24 +143,24 @@ public class MvnBuilderApplication {
             final File jarFile = new File(pathString);
             final String absolutePath = jarFile.getAbsolutePath();
 
-            // Only register if running from a packaged JAR file
-            if (!absolutePath.endsWith(".jar")) {
-                System.out.println("Running in development/IDE mode (non-JAR). Skipping service registration.");
-                return;
-            }
-
-            final String os = System.getProperty("os.name").toLowerCase();
-            if (os.contains("win")) {
-                registerWindowsAutostart(absolutePath);
-            } else if (os.contains("nix") || os.contains("nux")) {
-                registerLinuxAutostart(absolutePath);
-            } else if (os.contains("mac")) {
-                registerMacAutostart(absolutePath);
+            if (absolutePath.endsWith(".jar")) {
+                return absolutePath;
             }
         } catch (final Exception e) {
-            System.err.println("Failed to determine JAR path or register background service: " + e.getMessage());
+            System.err.println("Failed to determine JAR path: " + e.getMessage());
         }
+        return null;
     }
+
+    /**
+     * Checks if the application is currently running from a packaged JAR file.
+     *
+     * @return True if running from a JAR, false otherwise.
+     */
+    private static boolean isPackagedJar() {
+        return getPackagedJarPath() != null;
+    }
+
 
     /**
      * Registers a Windows startup script in the user's Startup directory.
@@ -138,14 +179,13 @@ public class MvnBuilderApplication {
 
             final Path batFile = startupDir.resolve("start-mvnbuilder.bat");
 
-            final String batContent = "@echo off\n" +
-                    "start javaw -jar \"" + jarPath + "\"\n";
+            final String batContent = getWindowsAutostartContent(jarPath);
 
             Files.writeString(batFile, batContent);
             System.out.println("Windows startup script registered at: " + batFile);
 
             // Spawn the detached background process immediately
-            runCommand("cmd.exe", "/c", "start", "javaw", "-jar", jarPath);
+            runCommand("cmd.exe", "/c", "start", "javaw", "-jar", jarPath, "--no-service");
             System.out.println("Windows background service started.");
         } catch (final Exception e) {
             System.err.println("Failed to register Windows startup script: " + e.getMessage());
@@ -165,16 +205,7 @@ public class MvnBuilderApplication {
 
             final Path serviceFile = serviceDir.resolve("mvnbuilder.service");
 
-            final String serviceContent = "[Unit]\n" +
-                    "Description=MvnBuilder Web UI Service\n" +
-                    "After=graphical-session.target\n\n" +
-                    "[Service]\n" +
-                    "Type=simple\n" +
-                    "Environment=DISPLAY=:0\n" +
-                    "ExecStart=java -Djava.awt.headless=false -jar \"" + jarPath + "\"\n" +
-                    "Restart=on-failure\n\n" +
-                    "[Install]\n" +
-                    "WantedBy=default.target\n";
+            final String serviceContent = getLinuxAutostartContent(jarPath);
 
             Files.writeString(serviceFile, serviceContent);
             System.out.println("Created systemd user service file at: " + serviceFile);
@@ -202,26 +233,7 @@ public class MvnBuilderApplication {
 
             final Path plistFile = agentsDir.resolve("net.olaba.mvnbuilder.plist");
 
-            final String plistContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
-                    "<plist version=\"1.0\">\n" +
-                    "<dict>\n" +
-                    "    <key>Label</key>\n" +
-                    "    <string>net.olaba.mvnbuilder</string>\n" +
-                    "    <key>ProgramArguments</key>\n" +
-                    "    <array>\n" +
-                    "        <string>java</string>\n" +
-                    "        <string>-Djava.awt.headless=false</string>\n" +
-                    "        <string>-Dapple.awt.UIElement=true</string>\n" +
-                    "        <string>-jar</string>\n" +
-                    "        <string>" + jarPath + "</string>\n" +
-                    "    </array>\n" +
-                    "    <key>RunAtLoad</key>\n" +
-                    "    <true/>\n" +
-                    "    <key>KeepAlive</key>\n" +
-                    "    <true/>\n" +
-                    "</dict>\n" +
-                    "</plist>\n";
+            final String plistContent = getMacAutostartContent(jarPath);
 
             Files.writeString(plistFile, plistContent);
             System.out.println("Created macOS LaunchAgent plist at: " + plistFile);
@@ -233,6 +245,48 @@ public class MvnBuilderApplication {
         } catch (final Exception e) {
             System.err.println("Failed to register macOS LaunchAgent: " + e.getMessage());
         }
+    }
+
+    static String getWindowsAutostartContent(final String jarPath) {
+        return "@echo off\n" +
+                "start javaw -jar \"" + jarPath + "\" --no-service\n";
+    }
+
+    static String getLinuxAutostartContent(final String jarPath) {
+        return "[Unit]\n" +
+                "Description=MvnBuilder Web UI Service\n" +
+                "After=graphical-session.target\n\n" +
+                "[Service]\n" +
+                "Type=simple\n" +
+                "Environment=DISPLAY=:0\n" +
+                "ExecStart=java -Djava.awt.headless=false -jar \"" + jarPath + "\" --no-service\n" +
+                "Restart=on-failure\n\n" +
+                "[Install]\n" +
+                "WantedBy=default.target\n";
+    }
+
+    static String getMacAutostartContent(final String jarPath) {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
+                "<plist version=\"1.0\">\n" +
+                "<dict>\n" +
+                "    <key>Label</key>\n" +
+                "    <string>net.olaba.mvnbuilder</string>\n" +
+                "    <key>ProgramArguments</key>\n" +
+                "    <array>\n" +
+                "        <string>java</string>\n" +
+                "        <string>-Djava.awt.headless=false</string>\n" +
+                "        <string>-Dapple.awt.UIElement=true</string>\n" +
+                "        <string>-jar</string>\n" +
+                "        <string>" + jarPath + "</string>\n" +
+                "        <string>--no-service</string>\n" +
+                "    </array>\n" +
+                "    <key>RunAtLoad</key>\n" +
+                "    <true/>\n" +
+                "    <key>KeepAlive</key>\n" +
+                "    <true/>\n" +
+                "</dict>\n" +
+                "</plist>\n";
     }
 
     private static String getMacUid() {

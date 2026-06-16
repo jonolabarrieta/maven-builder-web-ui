@@ -64,6 +64,12 @@ The application runs on port **3333** by default. You can change this by setting
 java -jar target/mvn-builder.jar
 ```
 
+* **Service Mode by Default**: When launching the packaged `.jar` file, the application automatically registers itself for startup autostart on system boot (via systemd on Linux, startup batch script on Windows, or LaunchAgent on macOS), starts the background service, and exits the foreground terminal process immediately.
+* **Foreground Mode (`--no-service`)**: To run the application in the foreground attached to your terminal, launch the JAR with the `--no-service` argument:
+  ```bash
+  java -jar target/mvn-builder.jar --no-service
+  ```
+
 #### 2. Native Binary (Linux/macOS/Windows)
 ```bash
 # Linux/macOS
@@ -72,6 +78,7 @@ java -jar target/mvn-builder.jar
 # Windows
 mvn-builder.exe
 ```
+*Note: Running in development mode (e.g. from IDE/run scripts) or running as a native binary runs the application in the foreground by default without registering autostart services.*
 
 #### 3. Docker Compose (Recommended)
 Download the `docker-compose.yml` file and run:

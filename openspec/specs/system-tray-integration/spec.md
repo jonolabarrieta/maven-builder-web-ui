@@ -1,5 +1,6 @@
-## ADDED Requirements
-
+## Purpose
+Provides system tray integration and autostart capabilities for MvnBuilder.
+## Requirements
 ### Requirement: Disable Headless Mode
 The application MUST run with Java AWT headless mode disabled (`java.awt.headless=false`) to support desktop environment GUI integration.
 
@@ -32,10 +33,11 @@ The system tray icon MUST provide a popup menu containing options to open the we
 ### Requirement: Automated Background Service Registration
 The application MUST support command-line arguments to choose between running as a background service or running in the foreground attached to the terminal.
 
-#### Scenario: Running in service mode with --service argument
-- **WHEN** the application is started from a packaged JAR with the `--service` argument
+#### Scenario: Running in service mode by default
+- **WHEN** the application is started from a packaged JAR without the `--no-service` argument
 - **THEN** it registers the system startup configurations, launches the background service/daemon instance, and the foreground process immediately terminates to free the terminal
 
-#### Scenario: Running in normal mode without arguments
-- **WHEN** the application is started from a packaged JAR without the `--service` argument
+#### Scenario: Running in normal mode with --no-service argument
+- **WHEN** the application is started from a packaged JAR with the `--no-service` argument
 - **THEN** it runs in the foreground attached to the terminal, and no service/autostart configuration is generated or registered
+
