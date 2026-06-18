@@ -71,6 +71,64 @@ public class GitService {
     }
 
     /**
+     * Lists all remote branches for a given directory.
+     * 
+     * @param projectDir The directory to check.
+     * @return A list of remote branch names.
+     */
+    public List<String> listRemoteBranches(final File projectDir) {
+        final List<String> branches = new ArrayList<>();
+        try {
+            final ProcessBuilder pb = new ProcessBuilder("git", "branch", "-r", "--format=%(refname:short)");
+            pb.directory(projectDir);
+            final Process process = pb.start();
+            
+            try (final BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    final String trimmed = line.trim();
+                    if (!trimmed.isEmpty() && !trimmed.contains("->")) {
+                        branches.add(trimmed);
+                    }
+                }
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
+        } catch (final Exception e) {
+            log.error("Failed to list remote git branches for directory {}: {}", projectDir, e.getMessage());
+        }
+        return branches;
+    }
+
+    /**
+     * Lists all tags for a given directory, sorted by version descending.
+     * 
+     * @param projectDir The directory to check.
+     * @return A list of tag names.
+     */
+    public List<String> listTags(final File projectDir) {
+        final List<String> tags = new ArrayList<>();
+        try {
+            final ProcessBuilder pb = new ProcessBuilder("git", "tag", "--sort=-v:refname", "--format=%(refname:short)");
+            pb.directory(projectDir);
+            final Process process = pb.start();
+            
+            try (final BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    final String trimmed = line.trim();
+                    if (!trimmed.isEmpty()) {
+                        tags.add(trimmed);
+                    }
+                }
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
+        } catch (final Exception e) {
+            log.error("Failed to list git tags for directory {}: {}", projectDir, e.getMessage());
+        }
+        return tags;
+    }
+
+    /**
      * Checks out an existing branch.
      * 
      * @param projectDir The repository directory.
@@ -90,6 +148,16 @@ public class GitService {
      */
     public boolean createBranch(final File projectDir, final String branchName) {
         return executeGitCommand(projectDir, "checkout", "-b", branchName);
+    }
+
+    /**
+     * Executes git fetch synchronously.
+     * 
+     * @param projectDir The repository directory.
+     * @return True if successful.
+     */
+    public boolean fetch(final File projectDir) {
+        return executeGitCommand(projectDir, "fetch");
     }
 
     /**

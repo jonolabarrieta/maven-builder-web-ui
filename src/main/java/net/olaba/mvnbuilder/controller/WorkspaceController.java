@@ -566,11 +566,38 @@ public class WorkspaceController {
         final Workspace workspace = project.getWorkspace();
         final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
         final List<String> branches = gitService.listBranches(projectDir);
+        final List<String> remoteBranches = gitService.listRemoteBranches(projectDir);
+        final List<String> tags = gitService.listTags(projectDir);
 
         model.addAttribute("project", project);
         model.addAttribute("branches", branches);
+        model.addAttribute("remoteBranches", remoteBranches);
+        model.addAttribute("tags", tags);
         model.addAttribute("currentBranch", project.getGitBranch());
         return "fragments/branch-selector :: branch-list";
+    }
+
+    /**
+     * Executes git fetch for a project synchronously and returns the updated branch selector.
+     * 
+     * @param id    The project ID.
+     * @param model The UI model.
+     * @return The branch selector fragment.
+     */
+    @PostMapping("/projects/{id}/branches/fetch")
+    public String fetchAndReloadBranches(final @PathVariable Long id, final Model model) {
+        log.info("Request to fetch git references and reload branch modal for project ID {}", id);
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final Workspace workspace = project.getWorkspace();
+        final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
+        
+        try {
+            gitService.fetch(projectDir);
+        } catch (final Exception e) {
+            log.error("Failed to fetch references: {}", e.getMessage());
+        }
+        
+        return getBranches(id, model);
     }
 
     /**
