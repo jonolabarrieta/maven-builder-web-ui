@@ -7,9 +7,8 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# The binary name from release-artifacts/mvn-builder-linux-amd64
-COPY release-artifacts/mvn-builder-linux-amd64 /app/mvn-builder
-RUN chmod +x /app/mvn-builder
+# The JAR name from release-artifacts/mvn-builder.jar
+COPY release-artifacts/mvn-builder.jar /app/mvn-builder.jar
 
 # Default workspace location
 RUN mkdir /workspaces
@@ -17,4 +16,4 @@ ENV BASE_PATH=/workspaces
 
 EXPOSE 3333
 
-ENTRYPOINT ["/app/mvn-builder"]
+ENTRYPOINT ["java", "-jar", "/app/mvn-builder.jar"]

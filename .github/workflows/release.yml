@@ -1,4 +1,4 @@
-name: Release Native Binary
+name: Release JAR and Docker Image
 
 on:
   push:
@@ -11,27 +11,31 @@ permissions:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            runner: ubuntu-latest
-            suffix: linux-amd64
-          - os: windows-latest
-            runner: windows-latest
-            suffix: windows-amd64.exe
-          - os: macos-13
-            runner: macos-13
-            suffix: macos-amd64
-          - os: macos-14
-            runner: macos-14
-            suffix: macos-arm64
+    name: Build JAR and Docker Image
+    runs-on: ubuntu-latest
+    # strategy:
+    #   matrix:
+    #     include:
+    #       - os: ubuntu-latest
+    #         runner: ubuntu-latest
+    #         suffix: linux-amd64
+    #       - os: windows-latest
+    #         runner: windows-latest
+    #         suffix: windows-amd64.exe
+    #       - os: macos-13
+    #         runner: macos-13
+    #         suffix: macos-amd64
+    #       - os: macos-14
+    #         runner: macos-14
+    #         suffix: macos-arm64
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # - name: Configure MSVC Command Prompt (Windows)
+      #   if: matrix.os == 'windows-latest'
+      #   uses: ilammy/msvc-dev-cmd@v1
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -51,22 +55,21 @@ jobs:
       - name: Build JAR
         run: mvn clean package -DskipTests
 
-      - name: Build Native Image
-        run: mvn -Pnative native:compile -DskipTests
+      # - name: Build Native Image
+      #   run: mvn -Pnative native:compile -DskipTests
 
       - name: Prepare Artifact
         shell: bash
         run: |
           mkdir -p release-artifacts
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/mvn-builder.exe release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
-          else
-            cp target/mvn-builder release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
-          fi
+          # # Commented out native binary packaging
+          # if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          #   cp target/mvn-builder.exe release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
+          # else
+          #   cp target/mvn-builder release-artifacts/mvn-builder-${{ github.ref_name }}-${{ matrix.suffix }}
+          # fi
           
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            cp target/mvn-builder-*.jar release-artifacts/mvn-builder-${{ github.ref_name }}.jar
-          fi
+          cp target/mvn-builder-*.jar release-artifacts/mvn-builder-${{ github.ref_name }}.jar
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
@@ -78,13 +81,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare Docker Context
-        if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
-          cp target/mvn-builder release-artifacts/mvn-builder-linux-amd64
+          cp target/mvn-builder-*.jar release-artifacts/mvn-builder.jar
 
       - name: Log in to GitHub Container Registry
-        if: matrix.os == 'ubuntu-latest'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -92,7 +93,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        if: matrix.os == 'ubuntu-latest'
         uses: docker/build-push-action@v5
         with:
           context: .
