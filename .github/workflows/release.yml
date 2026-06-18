@@ -33,6 +33,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set Release Version
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
       # - name: Configure MSVC Command Prompt (Windows)
       #   if: matrix.os == 'windows-latest'
       #   uses: ilammy/msvc-dev-cmd@v1
@@ -53,10 +59,10 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Build JAR
-        run: mvn clean package -DskipTests
+        run: mvn clean package -Drevision=${{ env.VERSION }} -DskipTests
 
       # - name: Build Native Image
-      #   run: mvn -Pnative native:compile -DskipTests
+      #   run: mvn -Pnative native:compile -Drevision=${{ env.VERSION }} -DskipTests
 
       - name: Prepare Artifact
         shell: bash
