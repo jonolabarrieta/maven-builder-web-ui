@@ -64,7 +64,7 @@ class WorkspaceImportExportTest {
         when(workspaceRepository.findById(1L)).thenReturn(Optional.of(ws));
         when(mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(1L)).thenReturn(Arrays.asList(p1, p2));
 
-        String exported = workspaceService.exportWorkspace(1L);
+        String exported = workspaceService.exportWorkspace(1L).replace('\\', '/');
 
         assertTrue(exported.contains("Workspace: My Test Workspace"));
         assertTrue(exported.contains("BasePath: /tmp/base"));
