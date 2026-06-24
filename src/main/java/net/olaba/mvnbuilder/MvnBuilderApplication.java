@@ -161,6 +161,48 @@ public class MvnBuilderApplication {
         return getPackagedJarPath() != null;
     }
 
+    /**
+     * Resolves the absolute path of the Java executable currently running the application.
+     *
+     * @return The absolute path to the java executable.
+     */
+    static String getJavaExecutablePath() {
+        final String javaHome = System.getProperty("java.home");
+        if (javaHome == null || javaHome.isEmpty()) {
+            return "java";
+        }
+        final String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win")) {
+            final File javaw = new File(javaHome, "bin/javaw.exe");
+            if (javaw.exists()) {
+                return javaw.getAbsolutePath();
+            }
+            final File java = new File(javaHome, "bin/java.exe");
+            if (java.exists()) {
+                return java.getAbsolutePath();
+            }
+            return "javaw";
+        } else {
+            final File java = new File(javaHome, "bin/java");
+            if (java.exists()) {
+                return java.getAbsolutePath();
+            }
+            return "java";
+        }
+    }
+
+    /**
+     * Resolves the parent directory of the JAR path safely.
+     *
+     * @param jarPath The absolute path to the JAR.
+     * @return The absolute path to the parent directory.
+     */
+    private static String getJarParentDir(final String jarPath) {
+        final File file = new File(jarPath);
+        final String parent = file.getParent();
+        return parent != null ? parent : System.getProperty("user.home");
+    }
+
 
     /**
      * Registers a Windows startup script in the user's Startup directory.
@@ -185,7 +227,8 @@ public class MvnBuilderApplication {
             System.out.println("Windows startup script registered at: " + batFile);
 
             // Spawn the detached background process immediately
-            runCommand("cmd.exe", "/c", "start", "javaw", "-jar", jarPath, "--no-service");
+            final String javaExe = getJavaExecutablePath();
+            runCommand("cmd.exe", "/c", "start", "", javaExe, "-jar", jarPath, "--no-service");
             System.out.println("Windows background service started.");
         } catch (final Exception e) {
             System.err.println("Failed to register Windows startup script: " + e.getMessage());
@@ -248,33 +291,43 @@ public class MvnBuilderApplication {
     }
 
     static String getWindowsAutostartContent(final String jarPath) {
+        final String javaExe = getJavaExecutablePath();
+        final String parentDir = getJarParentDir(jarPath);
         return "@echo off\n" +
-                "start javaw -jar \"" + jarPath + "\" --no-service\n";
+                "cd /d \"" + parentDir + "\"\n" +
+                "start \"\" \"" + javaExe + "\" -jar \"" + jarPath + "\" --no-service\n";
     }
 
     static String getLinuxAutostartContent(final String jarPath) {
+        final String javaExe = getJavaExecutablePath();
+        final String parentDir = getJarParentDir(jarPath);
         return "[Unit]\n" +
                 "Description=MvnBuilder Web UI Service\n" +
                 "After=graphical-session.target\n\n" +
                 "[Service]\n" +
                 "Type=simple\n" +
+                "WorkingDirectory=" + parentDir + "\n" +
                 "Environment=DISPLAY=:0\n" +
-                "ExecStart=java -Djava.awt.headless=false -jar \"" + jarPath + "\" --no-service\n" +
+                "ExecStart=\"" + javaExe + "\" -Djava.awt.headless=false -jar \"" + jarPath + "\" --no-service\n" +
                 "Restart=on-failure\n\n" +
                 "[Install]\n" +
                 "WantedBy=default.target\n";
     }
 
     static String getMacAutostartContent(final String jarPath) {
+        final String javaExe = getJavaExecutablePath();
+        final String parentDir = getJarParentDir(jarPath);
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                 "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
                 "<plist version=\"1.0\">\n" +
                 "<dict>\n" +
                 "    <key>Label</key>\n" +
                 "    <string>net.olaba.mvnbuilder</string>\n" +
+                "    <key>WorkingDirectory</key>\n" +
+                "    <string>" + parentDir + "</string>\n" +
                 "    <key>ProgramArguments</key>\n" +
                 "    <array>\n" +
-                "        <string>java</string>\n" +
+                "        <string>" + javaExe + "</string>\n" +
                 "        <string>-Djava.awt.headless=false</string>\n" +
                 "        <string>-Dapple.awt.UIElement=true</string>\n" +
                 "        <string>-jar</string>\n" +
