@@ -28,8 +28,8 @@
         </div>
 
         <!-- Single Project Item Fragment -->
-        <div th:fragment="m2-item(info)" class="p-6" th:if="${info != null}">
-            <div class="flex items-center justify-between mb-4">
+        <div th:fragment="m2-item(info)" class="p-4 sm:p-6" th:if="${info != null}">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <div th:if="${info.projectId != (project != null ? project.id : -1)}">
                     <span class="text-sm font-bold text-indigo-600" th:text="${info.artifactId}">child-artifact</span>
                     <span class="text-[10px] text-gray-400 font-mono ml-2" th:text="${info.groupId}">group.id</span>

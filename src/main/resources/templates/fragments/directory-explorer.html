@@ -2,10 +2,10 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
     <div th:fragment="directory-explorer-content">
-        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+        <div class="px-4 sm:px-6 py-4 border-b border-gray-100 flex justify-between items-center gap-2 bg-gray-50">
             <div>
                 <h3 class="text-lg font-bold text-gray-800">Directory Explorer</h3>
-                <p class="text-xs text-gray-400 font-mono truncate max-w-xs" th:text="${currentPath}">/path/to/dir</p>
+                <p class="text-xs text-gray-400 font-mono truncate max-w-[65vw] sm:max-w-xs" th:text="${currentPath}">/path/to/dir</p>
             </div>
             <button type="button" onclick="closeDirectoryExplorerModal()" class="text-gray-400 hover:text-gray-600">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -14,7 +14,7 @@
             </button>
         </div>
         
-        <div class="p-4 h-[350px] overflow-y-auto">
+        <div class="p-4 h-[min(350px,45dvh)] overflow-y-auto">
             <div th:if="${parentPath != null}" class="mb-2">
                 <button type="button" th:attr="hx-get=@{/workspaces/explorer(path=${parentPath}, targetInputId=${targetInputId})}"
                         hx-target="#directory-explorer-modal-content"
@@ -47,7 +47,7 @@
             </div>
         </div>
         
-        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
+        <div class="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-wrap gap-2 justify-between items-center">
             <span class="text-xs text-gray-400 font-medium truncate max-w-[250px]" th:text="'Selected: ' + ${currentPath}">Selected path</span>
             <button type="button" th:attr="data-path=${currentPath}, data-target=${targetInputId}"
                     onclick="selectWorkspaceDirectory(this.getAttribute('data-path'), this.getAttribute('data-target'))"

@@ -1,0 +1,41 @@
+/* Keep the action bar reachable on short screens and the project list readable. */
+@media (max-height: 700px) {
+    #bulk-action-toolbar {
+        max-height: calc(100dvh - var(--workspace-nav-height, 0px) - 1rem);
+        overflow-y: auto;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+    #project-table { min-width: 980px; }
+}
+
+@media (max-width: 767px) {
+    #project-table, #project-table-body { display: block; width: 100%; }
+    #project-table thead { display: none; }
+    #project-table-body tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .65rem;
+        padding: 1rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    #project-table-body td {
+        display: block;
+        min-width: 0;
+        padding: 0;
+    }
+    #project-table-body td:nth-child(1) { grid-column: 2; grid-row: 1; }
+    #project-table-body td:nth-child(2) { grid-column: 2; grid-row: 2; justify-self: end; }
+    #project-table-body td:nth-child(3) { grid-column: 1; grid-row: 2; }
+    #project-table-body td:nth-child(4) { grid-column: 1; grid-row: 1; overflow-wrap: anywhere; }
+    #project-table-body td:nth-child(5),
+    #project-table-body td:nth-child(6),
+    #project-table-body td:nth-child(7) { grid-column: 1 / -1; }
+    #project-table-body td:nth-child(7) {
+        padding-top: .75rem;
+        border-top: 1px solid #f3f4f6;
+        text-align: left;
+    }
+    #project-table-body td:nth-child(7) > div { justify-content: flex-start; }
+}

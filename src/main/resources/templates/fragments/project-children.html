@@ -36,12 +36,12 @@
 
             <div th:unless="${#lists.isEmpty(children)}" class="divide-y divide-gray-50">
                 <div th:each="child : ${children}" class="p-4 hover:bg-gray-50 transition-colors group">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center space-x-3 min-w-0">
                             <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xs" th:text="${child.artifactId.substring(0,1).toUpperCase()}">A</div>
                             <div>
                                 <div class="flex items-center space-x-2">
-                                    <span class="text-sm font-bold text-gray-800" th:text="${child.artifactId}">artifact-id</span>
+                                    <span class="text-sm font-bold text-gray-800 break-all" th:text="${child.artifactId}">artifact-id</span>
                                     <span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-bold border border-gray-200" th:text="${child.version}">1.0.0</span>
                                 </div>
                                 <div class="text-[10px] text-gray-400 font-mono" th:text="${child.groupId}">group.id</div>
@@ -73,7 +73,7 @@
                             </button>
                         </div>
                     </div>
-                    <div class="mt-2 pl-11">
+                    <div class="mt-2 sm:pl-11 break-all">
                         <div class="flex items-center text-[10px] text-gray-400">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />

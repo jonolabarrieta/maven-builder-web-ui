@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <link rel="stylesheet" href="/css/responsive.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
@@ -31,21 +32,21 @@
     </style>
 </head>
 <body class="text-gray-900">
-    <nav class="glass sticky top-0 z-50 px-6 py-4 flex justify-between items-center shadow-sm">
-        <div class="flex items-center space-x-4">
+    <nav id="workspace-nav" class="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col xl:flex-row xl:items-center gap-3 shadow-sm">
+        <div class="flex items-center space-x-3 min-w-0">
             <a href="/" class="text-gray-400 hover:text-gray-600 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
             </a>
-            <div class="flex items-center space-x-2 border-l pl-4">
-                <div class="flex items-baseline space-x-1.5">
-                    <span class="text-xl font-bold tracking-tight text-gray-800" th:text="${workspace.name}" th:attr="data-workspace-name=${workspace.name}">Workspace Name</span>
+            <div class="flex items-center space-x-2 border-l pl-3 min-w-0">
+                <div class="flex items-baseline space-x-1.5 min-w-0">
+                    <span class="text-base sm:text-xl font-bold tracking-tight text-gray-800 truncate" th:text="${workspace.name}" th:attr="data-workspace-name=${workspace.name}">Workspace Name</span>
                     <span class="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-md font-mono" th:text="${currentVersion != null ? 'v' + currentVersion : 'v1.1.0'}">v1.1.0</span>
                 </div>
             </div>
         </div>
-        <div class="flex items-center space-x-3">
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
             <a href="/settings" class="text-gray-500 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all font-medium flex items-center space-x-1.5 text-sm border border-gray-200 bg-white">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
@@ -98,7 +99,7 @@
                 Export Workspace
             </a>
             
-            <div class="h-6 w-px bg-gray-200 mx-2"></div>
+            <div class="hidden xl:block h-6 w-px bg-gray-200 mx-2"></div>
             
             <div hx-get="/settings/profiles/selector" hx-trigger="load" hx-swap="outerHTML">
                 <div class="animate-pulse bg-gray-200 h-10 w-48 rounded-lg"></div>
@@ -142,20 +143,78 @@
         </div>
     </div>
 
-    <main class="max-width-[1600px] mx-auto px-6 py-8 space-y-6">
+    <main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-6">
+        <!-- Bulk Action Toolbar -->
+        <div id="bulk-action-toolbar" style="top: var(--workspace-nav-height, 0px)" class="sticky z-40 bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-4">
+                <!-- Destructive Git Actions (left, always visible) -->
+                <div class="flex flex-wrap items-center gap-2 sm:border-r sm:pr-4">
+                    <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm" title="Unstage all staged changes in selected projects">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        <span>Unstage</span>
+                    </button>
+                    <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all shadow-sm" title="Discard all local unstaged changes in selected projects">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span>Discard Changes</span>
+                    </button>
+                </div>
+                <!-- Select All -->
+                <div class="flex items-center gap-2 sm:border-r sm:pr-4">
+                    <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <label for="select-all" class="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer">Select All</label>
+                </div>
+                <div id="bulk-actions" class="flex flex-wrap items-center gap-2 sm:border-r sm:pr-4">
+                    <button onclick="executeBulkAction('fetch')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                        </svg>
+                        <span>Fetch</span>
+                    </button>
+                    <button onclick="executeBulkAction('pull')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                        </svg>
+                        <span>Pull</span>
+                    </button>
+                    <button onclick="openBulkBranchModal()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Checkout branch for selected projects">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        <span>Branch</span>
+                    </button>
+                    <button onclick="executeBulkAction('build')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Build</span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                </div>
+            </div>
+            <div class="text-xs font-medium text-gray-400">
+                <span id="selected-count">0</span> projects selected
+            </div>
+        </div>
+
         <!-- Workspace Info (Top) -->
         <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center space-x-6">
-                <div>
+            <div class="flex flex-wrap items-center gap-4 sm:gap-6 min-w-0">
+                <div class="min-w-0">
                     <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Base Path</div>
-                    <div class="text-sm text-gray-600 font-mono" th:text="${workspace.basePath ?: 'No path defined'}">/path/to/workspace</div>
+                    <div class="text-sm text-gray-600 font-mono break-all" th:text="${workspace.basePath ?: 'No path defined'}">/path/to/workspace</div>
                 </div>
                 <div class="border-l pl-6">
                     <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Projects</div>
                     <div class="text-sm font-bold text-indigo-600" th:text="${projects.size()}">0</div>
                 </div>
             </div>
-            <div class="flex items-center space-x-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+            <div class="flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
                 <span class="flex items-center"><span class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span> Drag projects to reorder</span>
                 <span class="flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Auto-order uses dependencies</span>
             </div>
@@ -209,7 +268,7 @@
                 </div>
             </div>
 
-            <div id="retry-container" class="hidden bg-red-900/60 backdrop-blur-md border-t border-red-800/50 px-4 py-3 flex items-center justify-between shrink-0">
+            <div id="retry-container" class="hidden bg-red-900/60 backdrop-blur-md border-t border-red-800/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
                 <div class="flex items-center space-x-3">
                     <div class="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -235,7 +294,7 @@
         </div>
 
         <!-- M2 Favorites Panel (Top, Always Visible) -->
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-6 space-y-4">
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 sm:p-6 space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-100 pb-4">
                 <h3 class="text-lg font-bold text-gray-800 flex items-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -245,7 +304,7 @@
                     M2 Global Favorites
                 </h3>
                 <form hx-post="/settings/m2-favorites/add" hx-target="#m2-favorites-content" class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                    <select name="groupId" required class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white min-w-[200px]">
+                    <select name="groupId" required class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white w-full sm:w-auto sm:min-w-[200px]">
                         <option value="" disabled selected>Select folder from M2...</option>
                         <option th:each="g : ${availableGroupIds}" th:value="${g}" th:text="${g}"></option>
                     </select>
@@ -264,66 +323,8 @@
         <div class="w-full">
             <!-- Projects Table -->
 
-                <!-- Bulk Action Toolbar -->
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                        <!-- Destructive Git Actions (left, always visible) -->
-                        <div class="flex items-center space-x-2 border-r pr-4">
-                            <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm" title="Unstage all staged changes in selected projects">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                                </svg>
-                                <span>Unstage</span>
-                            </button>
-                            <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all shadow-sm" title="Discard all local unstaged changes in selected projects">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                <span>Discard Changes</span>
-                            </button>
-                        </div>
-                        <!-- Select All -->
-                        <div class="flex items-center space-x-2 border-r pr-4">
-                            <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            <label for="select-all" class="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer">Select All</label>
-                        </div>
-                        <div id="bulk-actions" class="flex items-center space-x-2 border-r pr-4">
-                            <button onclick="executeBulkAction('fetch')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                                </svg>
-                                <span>Fetch</span>
-                            </button>
-                            <button onclick="executeBulkAction('pull')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                                </svg>
-                                <span>Pull</span>
-                            </button>
-                            <button onclick="openBulkBranchModal()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Checkout branch for selected projects">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                                </svg>
-                                <span>Branch</span>
-                            </button>
-                            <button onclick="executeBulkAction('build')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span>Build</span>
-                            </button>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                        </div>
-                    </div>
-                    <div class="text-xs font-medium text-gray-400">
-                        <span id="selected-count">0</span> projects selected
-                    </div>
-                </div>
-
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <table class="w-full text-left">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+                <table id="project-table" class="w-full text-left">
                     <thead class="bg-gray-50 border-b border-gray-100">
                         <tr>
                             <th class="px-6 py-4 w-10"></th>
@@ -413,7 +414,7 @@
                                 <span th:unless="${project.hasChildren()}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <div class="flex justify-end items-center gap-1">
+                                <div class="flex flex-wrap justify-end items-center gap-1">
                                         <button th:attr="hx-post=@{/projects/{id}/open-vscode(id=${project.id})}" 
                                                 hx-swap="none" 
                                                 class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" 
@@ -485,7 +486,7 @@
     </main>
 
     <!-- Edit Workspace Modal -->
-    <div id="edit-workspace-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
+    <div id="edit-workspace-modal" class="hidden fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
         <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all">
             <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
                 <h3 class="text-2xl font-bold text-gray-800">Workspace Settings</h3>
@@ -566,8 +567,8 @@
     </div>
 
     <!-- Branch Selector Modal -->
-    <div id="branch-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl transform transition-all overflow-hidden">
+    <div id="branch-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-sm max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="branch-modal-content">
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
@@ -578,8 +579,8 @@
     </div>
 
     <!-- Bulk Branch Modal -->
-    <div id="bulk-branch-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+    <div id="bulk-branch-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <div>
                     <h3 class="text-lg font-bold text-gray-800">Bulk Branch Checkout</h3>
@@ -623,8 +624,8 @@
     </div>
 
     <!-- M2 Modal -->
-    <div id="m2-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+    <div id="m2-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="m2-modal-content">
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
@@ -635,8 +636,8 @@
     </div>
 
     <!-- Explorer Modal -->
-    <div id="explorer-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all overflow-hidden">
+    <div id="explorer-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="explorer-modal-content">
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
@@ -647,8 +648,8 @@
     </div>
 
     <!-- Directory Explorer Modal -->
-    <div id="directory-explorer-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all overflow-hidden">
+    <div id="directory-explorer-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="directory-explorer-modal-content">
                 <div class="p-8 text-center">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
@@ -658,8 +659,8 @@
     </div>
 
     <!-- Recursive Children Modal -->
-    <div id="children-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl transform transition-all overflow-hidden">
+    <div id="children-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="children-modal-content">
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
@@ -670,8 +671,8 @@
     </div>
 
     <!-- Project Properties Modal -->
-    <div id="project-properties-modal" class="hidden fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4">
-        <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all overflow-hidden">
+    <div id="project-properties-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[calc(100dvh-1rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div id="project-properties-modal-content">
                 <!-- Content loaded via HTMX -->
                 <div class="p-8 text-center">
@@ -682,7 +683,7 @@
     </div>
 
     <!-- Action Summary Toast Container -->
-    <div id="action-summary-container" class="fixed bottom-6 right-6 z-[80] flex flex-col space-y-4 max-w-md w-full"></div>
+    <div id="action-summary-container" class="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-auto sm:right-6 z-[80] flex flex-col space-y-4 max-w-md"></div>
 
     <script th:inline="javascript">
         const workspaceId = [[${workspace.id}]];
@@ -1339,6 +1340,19 @@
             if (event.target == projectPropertiesModal) projectPropertiesModal.classList.add('hidden');
             if (event.target == bulkBranchModal) bulkBranchModal.classList.add('hidden');
             if (event.target == directoryExplorerModal) directoryExplorerModal.classList.add('hidden');
+        }
+
+        const workspaceNav = document.getElementById('workspace-nav');
+        if (workspaceNav) {
+            const updateToolbarOffset = () => {
+                document.documentElement.style.setProperty('--workspace-nav-height', `${workspaceNav.offsetHeight}px`);
+            };
+            updateToolbarOffset();
+            if ('ResizeObserver' in window) {
+                new ResizeObserver(updateToolbarOffset).observe(workspaceNav);
+            } else {
+                window.addEventListener('resize', updateToolbarOffset);
+            }
         }
 
         // SortableJS init
