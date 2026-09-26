@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * Configuration for asynchronous task execution.
@@ -24,6 +25,9 @@ public class AsyncConfig {
         executor.setCorePoolSize(5);
         executor.setMaxPoolSize(10);
         executor.setQueueCapacity(25);
+        // When a bulk action fills the pool, run the next task on the submitting
+        // thread. This applies backpressure instead of rejecting the action.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setThreadNamePrefix("mvn-builder-");
         executor.initialize();
         return executor;
