@@ -25,6 +25,9 @@ public class ActionSummary {
     
     /** The artifact ID of the project that failed (if any). */
     private String failedProject;
+
+    /** Repositories whose Git command failed. */
+    private List<String> failedProjects;
     
     /** The list of artifact IDs of projects that completed successfully. */
     private List<String> succeededProjects;

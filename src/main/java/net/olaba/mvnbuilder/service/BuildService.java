@@ -171,10 +171,12 @@ public class BuildService {
     public void gitFetch(final MavenProject project) {
         final File projectDir = getProjectDir(project);
         processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch")
+                .exceptionally(error -> new CommandResult(-1, List.of()))
                 .thenAccept(result -> {
                     final ActionSummary summary = ActionSummary.builder()
                             .withAction("git-fetch")
                             .withSuccess(result.getExitCode() == 0)
+                            .withFailedProjects(result.getExitCode() == 0 ? List.of() : List.of(project.getArtifactId()))
                             .build();
                     messagingTemplate.convertAndSend("/topic/action-summary", summary);
                 });
@@ -188,6 +190,7 @@ public class BuildService {
     public void gitPull(final MavenProject project) {
         final File projectDir = getProjectDir(project);
         processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
+                .exceptionally(error -> new CommandResult(-1, List.of()))
                 .thenAccept(result -> {
                     boolean hasChanges = true;
                     for (final String line : result.getOutput()) {
@@ -198,14 +201,14 @@ public class BuildService {
                     }
                     final List<String> changed = new java.util.ArrayList<>();
                     final List<String> noChanges = new java.util.ArrayList<>();
-                    if (hasChanges && result.getExitCode() == 0) {
-                        changed.add(project.getArtifactId());
-                    } else {
-                        noChanges.add(project.getArtifactId());
+                    if (result.getExitCode() == 0) {
+                        if (hasChanges) changed.add(project.getArtifactId());
+                        else noChanges.add(project.getArtifactId());
                     }
                     final ActionSummary summary = ActionSummary.builder()
                             .withAction("git-pull")
                             .withSuccess(result.getExitCode() == 0)
+                            .withFailedProjects(result.getExitCode() == 0 ? List.of() : List.of(project.getArtifactId()))
                             .withChangedProjects(changed)
                             .withNoChangesProjects(noChanges)
                             .build();
@@ -219,17 +222,27 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitFetch(final List<MavenProject> projects) {
+        final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
         final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
+            enabledProjects.add(project);
             final File projectDir = getProjectDir(project);
-            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch"));
+            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "fetch")
+                    .exceptionally(error -> new CommandResult(-1, List.of())));
         }
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
             .thenRun(() -> {
+                final List<String> failed = new java.util.ArrayList<>();
+                for (int i = 0; i < futures.size(); i++) {
+                    if (futures.get(i).join().getExitCode() != 0) {
+                        failed.add(enabledProjects.get(i).getArtifactId());
+                    }
+                }
                 final ActionSummary summary = ActionSummary.builder()
                         .withAction("git-fetch")
-                        .withSuccess(true)
+                        .withSuccess(failed.isEmpty())
+                        .withFailedProjects(failed)
                         .build();
                 messagingTemplate.convertAndSend("/topic/action-summary", summary);
             });
@@ -241,37 +254,38 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitPull(final List<MavenProject> projects) {
-        final List<String> changed = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
-        final List<String> noChanges = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
-        final List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
-        
+        final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
+        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
+
         for (final MavenProject project : projects) {
             if (!project.isEnabled()) continue;
+            enabledProjects.add(project);
             final File projectDir = getProjectDir(project);
-            futures.add(
-                processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
-                    .thenAccept(result -> {
-                        boolean hasChanges = true;
-                        for (final String line : result.getOutput()) {
-                            if (line.contains("Already up to date") || line.contains("Ya al día") || line.contains("up-to-date")) {
-                                hasChanges = false;
-                                break;
-                            }
-                        }
-                        if (hasChanges && result.getExitCode() == 0) {
-                            changed.add(project.getArtifactId());
-                        } else {
-                            noChanges.add(project.getArtifactId());
-                        }
-                    })
-            );
+            futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "pull")
+                    .exceptionally(error -> new CommandResult(-1, List.of())));
         }
-        
+
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
             .thenRun(() -> {
+                final List<String> changed = new java.util.ArrayList<>();
+                final List<String> noChanges = new java.util.ArrayList<>();
+                final List<String> failed = new java.util.ArrayList<>();
+                for (int i = 0; i < futures.size(); i++) {
+                    final CommandResult result = futures.get(i).join();
+                    final String artifactId = enabledProjects.get(i).getArtifactId();
+                    if (result.getExitCode() != 0) {
+                        failed.add(artifactId);
+                    } else if (result.getOutput().stream().anyMatch(line ->
+                            line.contains("Already up to date") || line.contains("Ya al día") || line.contains("up-to-date"))) {
+                        noChanges.add(artifactId);
+                    } else {
+                        changed.add(artifactId);
+                    }
+                }
                 final ActionSummary summary = ActionSummary.builder()
                         .withAction("git-pull")
-                        .withSuccess(true)
+                        .withSuccess(failed.isEmpty())
+                        .withFailedProjects(failed)
                         .withChangedProjects(changed)
                         .withNoChangesProjects(noChanges)
                         .build();
