@@ -6,6 +6,8 @@
     <title>Configuration - MvnBuilder</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="/js/global-spinner.js" defer></script>
+    <script src="/js/confirmation-modal.js" defer></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
@@ -114,8 +116,12 @@
                             </button>
                         </form>
                         <form th:action="@{/settings/java-installations/{id}/delete(id=${ji.id})}" method="POST"
-                              onsubmit="return confirm('Remove this Java installation?')">
-                            <button type="submit" class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                              th:id="'delete-java-form-' + ${ji.id}">
+                            <button type="button"
+                                    onclick="confirmRemoveJavaInstallation(this)"
+                                    th:data-form-id="'delete-java-form-' + ${ji.id}"
+                                    th:data-java-name="${ji.name}"
+                                    class="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
@@ -174,6 +180,7 @@
                                 hx-target="#updater-card"
                                 hx-swap="outerHTML"
                                 hx-indicator="#checking-indicator"
+                                data-no-spinner="true"
                                 class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md shadow-indigo-100">
                             Buscar Actualizaciones
                         </button>
@@ -221,7 +228,8 @@
                         </div>
 
                         <div th:if="${matchingAsset != null}">
-                            <form hx-post="/settings/apply-update" hx-target="#updater-content" hx-indicator="#installing-indicator">
+                            <form hx-post="/settings/apply-update" hx-target="#updater-content"
+                                  hx-indicator="#installing-indicator" data-no-spinner="true">
                                 <input type="hidden" name="downloadUrl" th:value="${matchingAsset.browserDownloadUrl}">
                                 <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md shadow-green-100">
                                     Descargar e Instalar v<span th:text="${latestVersion}">1.2.0</span>
@@ -247,6 +255,7 @@
                                 hx-target="#updater-card"
                                 hx-swap="outerHTML"
                                 hx-indicator="#checking-indicator"
+                                data-no-spinner="true"
                                 class="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-all text-sm">
                             Buscar de Nuevo
                         </button>
@@ -268,5 +277,26 @@
         </div>
 
     </main>
+
+    <script>
+        function confirmRemoveJavaInstallation(button) {
+            const form = document.getElementById(button.dataset.formId);
+            if (!form) {
+                ConfirmationModal.error({
+                    title: 'Unable to remove installation',
+                    message: 'The Java installation form is no longer available. Refresh the page and try again.'
+                });
+                return;
+            }
+
+            ConfirmationModal.confirm({
+                title: 'Remove Java installation?',
+                message: `The Java installation "${button.dataset.javaName || ''}" will be removed from MvnBuilder.`,
+                confirmLabel: 'Remove',
+                danger: true,
+                onConfirm: () => form.requestSubmit()
+            });
+        }
+    </script>
 </body>
 </html>

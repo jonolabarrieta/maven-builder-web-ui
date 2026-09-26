@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="/js/global-spinner.js" defer></script>
-    <script src="/js/confirmation-modal.js"></script>
+    <script src="/js/confirmation-modal.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -1025,47 +1025,70 @@
             });
         }
 
+        async function requireSuccessfulResponse(response, fallbackMessage) {
+            if (response.ok) {
+                return response;
+            }
+
+            let responseMessage = '';
+            try {
+                responseMessage = (await response.text()).trim();
+            } catch (error) {
+                console.error('Unable to read error response:', error);
+            }
+            throw new Error(responseMessage || fallbackMessage);
+        }
+
+        function showRequestError(title, error, fallbackMessage) {
+            ConfirmationModal.error({
+                title,
+                message: error && error.message ? error.message : fallbackMessage
+            });
+        }
+
         function confirmUnstage(projectId, projectName) {
-            ConfirmationModal.show({
+            ConfirmationModal.confirm({
                 title: 'Unstage cambios',
-                message: `Se eliminarán todos los ficheros del <strong>staging area</strong> del proyecto <strong>${projectName}</strong>.<br><br>Esta acción es reversible (los cambios seguirán en el working tree).`,
+                message: `Se eliminarán todos los ficheros del staging area del proyecto "${projectName}".\n\nEsta acción es reversible: los cambios seguirán en el working tree.`,
                 confirmLabel: 'Unstage',
                 danger: false,
                 onConfirm: () => {
                     fetch(`/projects/${projectId}/git/unstage`, { method: 'POST' })
-                        .then(r => { if (!r.ok) r.text().then(t => console.error('Unstage failed:', t)); })
-                        .catch(e => console.error('Unstage error:', e));
+                        .then(response => requireSuccessfulResponse(response, 'No se pudieron retirar los cambios del staging area.'))
+                        .catch(error => showRequestError('Error al hacer unstage', error,
+                            'No se pudieron retirar los cambios del staging area.'));
                 }
             });
         }
 
         function confirmDiscard(projectId, projectName) {
             const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
-            ConfirmationModal.show({
+            ConfirmationModal.confirm({
                 title: '¿Descartar cambios?',
-                message: `Se descartarán <strong>todos los cambios no staged</strong> del proyecto <strong>${projectName}</strong>.<br><br>⚠️ Esta acción <strong>no se puede deshacer</strong>.`,
+                message: `Se descartarán todos los cambios no staged del proyecto "${projectName}".\n\nEsta acción no se puede deshacer.`,
                 confirmLabel: 'Descartar',
                 requireTyped: workspaceName,
                 requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
                 danger: true,
                 onConfirm: () => {
                     fetch(`/projects/${projectId}/git/discard`, { method: 'POST' })
-                        .then(r => { if (!r.ok) r.text().then(t => console.error('Discard failed:', t)); })
-                        .catch(e => console.error('Discard error:', e));
+                        .then(response => requireSuccessfulResponse(response, 'No se pudieron descartar los cambios.'))
+                        .catch(error => showRequestError('Error al descartar cambios', error,
+                            'No se pudieron descartar los cambios.'));
                 }
             });
         }
 
         function confirmDeleteWorkspaceDetail(workspaceId, workspaceName) {
-            ConfirmationModal.show({
+            ConfirmationModal.confirm({
                 title: '¿Eliminar workspace?',
-                message: `Esta acción <strong>no se puede deshacer</strong>. Se eliminará el workspace <strong>${workspaceName}</strong> y toda su configuración.`,
+                message: `Esta acción no se puede deshacer. Se eliminará el workspace "${workspaceName}" y toda su configuración.`,
                 confirmLabel: 'Eliminar',
                 requireTyped: workspaceName,
                 requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
                 danger: true,
                 onConfirm: () => {
-                    document.getElementById(`delete-workspace-form-${workspaceId}`).submit();
+                    document.getElementById(`delete-workspace-form-${workspaceId}`).requestSubmit();
                 }
             });
         }
@@ -1149,20 +1172,18 @@
             }
 
             if (selectedIds.length === 0) {
-                ConfirmationModal.show({
+                ConfirmationModal.info({
                     title: 'Sin proyectos seleccionados',
                     message: 'Selecciona al menos un proyecto de la lista antes de ejecutar esta acción.',
-                    confirmLabel: 'Entendido',
-                    danger: false,
-                    onConfirm: () => {}
+                    primaryLabel: 'Entendido'
                 });
                 return;
             }
 
             if (action === 'restore-staged') {
-                ConfirmationModal.show({
+                ConfirmationModal.confirm({
                     title: '¿Unstage de los proyectos seleccionados?',
-                    message: `Se eliminarán todos los ficheros del <strong>staging area</strong> en los <strong>${selectedIds.length}</strong> proyecto(s) seleccionado(s).<br><br>Los cambios seguirán en el working tree y esta acción es reversible.`,
+                    message: `Se eliminarán todos los ficheros del staging area en ${selectedIds.length} proyecto(s) seleccionado(s).\n\nLos cambios seguirán en el working tree y esta acción es reversible.`,
                     confirmLabel: 'Unstage',
                     danger: false,
                     onConfirm: () => _executeBulkActionRequest(action, selectedIds)
@@ -1172,9 +1193,9 @@
 
             if (action === 'checkout-discard') {
                 const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
-                ConfirmationModal.show({
+                ConfirmationModal.confirm({
                     title: '¿Descartar cambios en los proyectos seleccionados?',
-                    message: `Se descartarán <strong>todos los cambios no staged</strong> en los <strong>${selectedIds.length}</strong> proyecto(s) seleccionado(s).<br><br>⚠️ Esta acción <strong>no se puede deshacer</strong>.`,
+                    message: `Se descartarán todos los cambios no staged en ${selectedIds.length} proyecto(s) seleccionado(s).\n\nEsta acción no se puede deshacer.`,
                     confirmLabel: 'Descartar',
                     requireTyped: workspaceName,
                     requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
@@ -1205,17 +1226,11 @@
             fetch(`/workspaces/${workspaceId}/bulk-action`, {
                 method: 'POST',
                 body: formData
-            }).then(response => {
-                if (!response.ok) {
-                    ConfirmationModal.show({
-                        title: 'Error al ejecutar la acción',
-                        message: 'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.',
-                        confirmLabel: 'Cerrar',
-                        danger: true,
-                        onConfirm: () => {}
-                    });
-                }
-            });
+            })
+                .then(response => requireSuccessfulResponse(response,
+                    'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.'))
+                .catch(error => showRequestError('Error al ejecutar la acción', error,
+                    'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.'));
         }
 
         function addSelectedProjects() {
@@ -1223,7 +1238,10 @@
             const paths = Array.from(checkboxes).map(cb => cb.value);
             
             if (paths.length === 0) {
-                alert('Please select at least one project.');
+                ConfirmationModal.info({
+                    title: 'No projects selected',
+                    message: 'Select at least one project before adding it to the workspace.'
+                });
                 return;
             }
 
@@ -1233,13 +1251,11 @@
             fetch(`/workspaces/${workspaceId}/explorer/add`, {
                 method: 'POST',
                 body: formData
-            }).then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Error adding projects');
-                }
-            });
+            })
+                .then(response => requireSuccessfulResponse(response, 'The selected projects could not be added.'))
+                .then(() => window.location.reload())
+                .catch(error => showRequestError('Unable to add projects', error,
+                    'The selected projects could not be added.'));
         }
 
         function addCustomProjectPath(path) {
@@ -1250,13 +1266,11 @@
             fetch(`/workspaces/${workspaceId}/explorer/add`, {
                 method: 'POST',
                 body: formData
-            }).then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    alert('Error adding project: ' + path);
-                }
-            });
+            })
+                .then(response => requireSuccessfulResponse(response, `The project "${path}" could not be added.`))
+                .then(() => window.location.reload())
+                .catch(error => showRequestError('Unable to add project', error,
+                    `The project "${path}" could not be added.`));
         }
 
         function openBulkBranchModal() {
@@ -1266,7 +1280,10 @@
                 if(checkboxes[i].checked) checkedCount++;
             }
             if (checkedCount === 0) {
-                alert('Please select at least one project.');
+                ConfirmationModal.info({
+                    title: 'No projects selected',
+                    message: 'Select at least one project before changing branches.'
+                });
                 return;
             }
             document.getElementById('bulk-branch-name').value = '';
@@ -1279,7 +1296,10 @@
         function submitBulkBranch() {
             const branch = document.getElementById('bulk-branch-name').value.trim();
             if (!branch) {
-                alert('Please enter a branch name.');
+                ConfirmationModal.info({
+                    title: 'Branch name required',
+                    message: 'Enter the branch or reference name before continuing.'
+                });
                 return;
             }
             const createNew = document.getElementById('bulk-branch-create').checked;
@@ -1291,7 +1311,10 @@
             }
             
             if (selectedIds.length === 0) {
-                alert('Please select at least one project.');
+                ConfirmationModal.info({
+                    title: 'No projects selected',
+                    message: 'Select at least one project before changing branches.'
+                });
                 return;
             }
             
@@ -1306,23 +1329,20 @@
             
             fetch(`/workspaces/${workspaceId}/bulk-checkout`, {
                 method: 'POST',
-                body: formData
-            }).then(response => {
-                if (response.ok) {
-                    window.location.reload();
-                } else {
-                    response.text().then(text => {
-                        alert(text || 'Error switching branches.');
-                        // Reset view
-                        document.getElementById('bulk-branch-loading').classList.add('hidden');
-                        document.getElementById('bulk-branch-form-container').classList.remove('hidden');
-                    });
-                }
-            }).catch(err => {
-                alert('Network error: ' + err.message);
-                document.getElementById('bulk-branch-loading').classList.add('hidden');
-                document.getElementById('bulk-branch-form-container').classList.remove('hidden');
-            });
+                body: formData,
+                globalSpinner: false
+            })
+                .then(response => requireSuccessfulResponse(response, 'Error switching branches.'))
+                .then(() => window.location.reload())
+                .catch(error => {
+                    resetBulkBranchLoading();
+                    showRequestError('Unable to switch branches', error, 'Error switching branches.');
+                });
+        }
+
+        function resetBulkBranchLoading() {
+            document.getElementById('bulk-branch-loading').classList.add('hidden');
+            document.getElementById('bulk-branch-form-container').classList.remove('hidden');
         }
 
         function openDirectoryExplorerModal() {
@@ -1395,8 +1415,14 @@
                             body: JSON.stringify(projectIds)
                         }).then(response => {
                             if (!response.ok) {
-                                alert('Error updating order manually');
+                                throw new Error('The project order could not be saved.');
                             }
+                        }).catch(error => {
+                            ConfirmationModal.error({
+                                title: 'Unable to update project order',
+                                message: error.message || 'The project order could not be saved.',
+                                onClose: () => window.location.reload()
+                            });
                         });
                     }
                 });

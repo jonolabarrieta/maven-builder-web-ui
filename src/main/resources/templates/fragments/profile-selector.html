@@ -18,9 +18,18 @@
         <script>
             function activateProfile(profileId) {
                 fetch('/settings/profiles/' + profileId + '/activate', { method: 'POST' })
-                    .then(response => {
-                        if (!response.ok) throw new Error('Could not activate build profile');
+                    .then(async response => {
+                        if (!response.ok) {
+                            const responseText = (await response.text()).trim();
+                            throw new Error(responseText || 'Could not activate build profile.');
+                        }
                         window.location.reload();
+                    })
+                    .catch(error => {
+                        ConfirmationModal.error({
+                            title: 'Unable to activate build profile',
+                            message: error.message || 'Could not activate build profile.'
+                        });
                     });
             }
         </script>

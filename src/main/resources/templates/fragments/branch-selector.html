@@ -28,6 +28,8 @@
         <button th:attr="hx-post=@{/projects/{id}/branches/fetch(id=${project.id})}"
                 hx-target="#branch-modal-content"
                 hx-swap="innerHTML"
+                data-no-spinner="true"
+                hx-on:htmx:after-request="if(!event.detail.successful){resetBranchLoading();}"
                 onclick="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
                 class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/modal-fetch"
                 title="Git Fetch">
@@ -108,7 +110,9 @@
             <div class="pt-6 border-t border-gray-100">
                 <form th:attr="hx-post=@{/projects/{id}/create-branch(id=${project.id})}"
                       hx-swap="none"
-                      hx-on:htmx:after-request="if(event.detail.successful) { window.location.reload(); } else { alert('Error creating branch:\n' + event.detail.xhr.responseText); window.location.reload(); }"
+                      data-no-spinner="true"
+                      data-error-modal-handled="true"
+                      hx-on:htmx:after-request="handleCreateBranchResult(event)"
                       onsubmit="document.getElementById('branch-list-container').classList.add('hidden'); document.getElementById('branch-loading').classList.remove('hidden');"
                       class="space-y-3">
                     <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">Create New Branch</label>
@@ -145,9 +149,9 @@
         }
 
         function confirmAndCheckout(projectId, refName) {
-            ConfirmationModal.show({
+            ConfirmationModal.confirm({
                 title: 'Switch Reference',
-                message: 'Are you sure you want to checkout the project to <strong>' + refName + '</strong>?',
+                message: 'Are you sure you want to checkout the project to "' + refName + '"?',
                 confirmLabel: 'Confirm',
                 cancelLabel: 'Cancel',
                 danger: false,
@@ -160,23 +164,50 @@
 
                     fetch('/projects/' + projectId + '/checkout', {
                         method: 'POST',
-                        body: formData
+                        body: formData,
+                        globalSpinner: false
                     })
                     .then(function(response) {
-                        if (response.ok) {
-                            window.location.reload();
-                        } else {
-                            response.text().then(function(text) {
-                                alert('Error switching reference:\n' + text);
-                                window.location.reload();
+                        if (!response.ok) {
+                            return response.text().then(function(text) {
+                                throw new Error(text.trim() || 'The selected reference could not be checked out.');
                             });
                         }
+                        window.location.reload();
                     })
                     .catch(function(error) {
-                        alert('Error: ' + error.message);
-                        window.location.reload();
+                        resetBranchLoading();
+                        ConfirmationModal.error({
+                            title: 'Unable to switch reference',
+                            message: error.message || 'The selected reference could not be checked out.',
+                            onClose: function() { window.location.reload(); }
+                        });
                     });
                 }
+            });
+        }
+
+        function resetBranchLoading() {
+            var branchList = document.getElementById('branch-list-container');
+            var branchLoading = document.getElementById('branch-loading');
+            if (branchList) branchList.classList.remove('hidden');
+            if (branchLoading) branchLoading.classList.add('hidden');
+        }
+
+        function handleCreateBranchResult(event) {
+            if (event.detail.successful) {
+                window.location.reload();
+                return;
+            }
+
+            resetBranchLoading();
+            var responseText = event.detail.xhr && event.detail.xhr.responseText
+                ? event.detail.xhr.responseText.trim()
+                : '';
+            ConfirmationModal.error({
+                title: 'Unable to create branch',
+                message: responseText || 'The branch could not be created.',
+                onClose: function() { window.location.reload(); }
             });
         }
     </script>
