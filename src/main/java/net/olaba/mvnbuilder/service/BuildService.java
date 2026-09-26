@@ -5,6 +5,7 @@ import net.olaba.mvnbuilder.model.BuildFailure;
 import net.olaba.mvnbuilder.model.LogMessage;
 import net.olaba.mvnbuilder.model.CommandResult;
 import net.olaba.mvnbuilder.model.ActionSummary;
+import net.olaba.mvnbuilder.model.BuildRangeMode;
 
 import net.olaba.mvnbuilder.repository.BuildProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -161,6 +162,56 @@ public class BuildService {
     public void buildWorkspaceSequentially(final Long workspaceId) {
         final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
         buildProjectsSequentially(projects);
+    }
+
+    /**
+     * Builds a contiguous, inclusive selection of a workspace's execution order.
+     *
+     * @param workspaceId workspace containing the project
+     * @param projectId selected project identifier
+     * @param mode selection direction
+     */
+    public void buildWorkspaceRange(final Long workspaceId, final Long projectId, final BuildRangeMode mode) {
+        final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
+        buildProjectsSequentially(selectBuildRange(projects, projectId, mode));
+    }
+
+    /**
+     * Selects an inclusive build range from projects already sorted in execution order.
+     *
+     * @param projects projects in execution order
+     * @param projectId selected project identifier
+     * @param mode selection direction
+     * @return selected projects in execution order
+     */
+    List<MavenProject> selectBuildRange(final List<MavenProject> projects, final Long projectId,
+            final BuildRangeMode mode) {
+        final int selectedIndex = findProjectIndex(projects, projectId);
+        if (selectedIndex < 0) {
+            throw new IllegalArgumentException("The selected project does not belong to this workspace.");
+        }
+
+        return switch (mode) {
+            case ONLY -> List.of(projects.get(selectedIndex));
+            case FROM -> List.copyOf(projects.subList(selectedIndex, projects.size()));
+            case THROUGH -> List.copyOf(projects.subList(0, selectedIndex + 1));
+        };
+    }
+
+    /**
+     * Finds a project index by persistent identifier.
+     *
+     * @param projects projects to search
+     * @param projectId project identifier
+     * @return matching index or -1 when absent
+     */
+    private int findProjectIndex(final List<MavenProject> projects, final Long projectId) {
+        for (int index = 0; index < projects.size(); index++) {
+            if (projectId.equals(projects.get(index).getId())) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     /**

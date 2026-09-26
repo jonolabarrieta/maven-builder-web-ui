@@ -4,11 +4,15 @@
 TBD - created by archiving change import-export-workspace. Update Purpose after archive.
 ## Requirements
 ### Requirement: Export Workspace as Plain Text
-The system SHALL provide an option to export a workspace as a plain text file containing the workspace name, the base directory path, any excluded paths, and the project paths in their current execution order.
+The system SHALL provide an option to export a workspace as a plain text file containing the workspace name, the base directory path, any excluded paths, and the project paths in their current execution order. It SHALL also provide a separate option to export only the project paths.
 
 #### Scenario: User exports workspace
 - **WHEN** the user triggers the "Export Workspace" action on the workspace details page
 - **THEN** the system generates and prompts the download of a plain text file with the workspace configuration and the project paths in execution order
+
+#### Scenario: User exports only workspace paths
+- **WHEN** the user triggers the "Export Workspace Paths" action on the workspace details page
+- **THEN** the system downloads a UTF-8 plain text file containing exactly one absolute project path per line in current execution order, with no workspace metadata, project names, or exclusion entries.
 
 ### Requirement: Import Workspace from Plain Text
 The system SHALL allow users to import a workspace by uploading a plain text file or pasting the plain text configuration directly into a form. The imported workspace MUST be created with the specified name, base directory path, and excluded paths.
@@ -30,4 +34,3 @@ The system SHALL preserve the exact order of the projects as defined in the plai
 #### Scenario: Preserving execution order
 - **WHEN** a workspace is imported with a list of projects in a specific sequence
 - **THEN** the system sets the execution order of each successfully imported project starting from 0 to match the exact sequence in the configuration file
-

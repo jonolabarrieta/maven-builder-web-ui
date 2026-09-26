@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -38,6 +40,7 @@ public class WorkspaceController {
     private final SystemSettingService systemSettingService;
     private final net.olaba.mvnbuilder.repository.JavaInstallationRepository javaInstallationRepository;
     private final UpdateService updateService;
+    private final DesktopLauncherService desktopLauncherService;
 
     @ModelAttribute("availableGroupIds")
     public List<String> getAvailableGroupIds() {
@@ -318,6 +321,27 @@ public class WorkspaceController {
     }
 
     /**
+     * Exports only the ordered absolute paths from a workspace.
+     *
+     * @param id workspace identifier
+     * @return downloadable UTF-8 plain text paths
+     */
+    @GetMapping("/workspaces/{id}/export-paths")
+    public ResponseEntity<String> exportWorkspacePaths(final @PathVariable Long id) {
+        final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
+        final String content = workspaceService.getProjectsForWorkspace(id, true).stream()
+                .map(this::absoluteProjectPath)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        final String safeName = workspace.getName().replaceAll("[^a-zA-Z0-9-_]", "_");
+
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"workspace-paths-" + safeName + ".txt\"")
+                .contentType(new org.springframework.http.MediaType("text", "plain", StandardCharsets.UTF_8))
+                .body(content);
+    }
+
+    /**
      * Imports a workspace from a plain text configuration file.
      * 
      * @param file The uploaded text file.
@@ -416,6 +440,26 @@ public class WorkspaceController {
     }
 
     /**
+     * Starts an inclusive build range for a project in its workspace.
+     *
+     * @param workspaceId workspace identifier
+     * @param projectId selected project identifier
+     * @param mode requested range mode
+     * @return accepted or validation error response
+     */
+    @PostMapping("/workspaces/{workspaceId}/projects/{projectId}/build-range")
+    @ResponseBody
+    public ResponseEntity<String> buildProjectRange(final @PathVariable Long workspaceId,
+            final @PathVariable Long projectId, final @RequestParam net.olaba.mvnbuilder.model.BuildRangeMode mode) {
+        try {
+            buildService.buildWorkspaceRange(workspaceId, projectId, mode);
+            return ResponseEntity.accepted().body("Build started.");
+        } catch (final IllegalArgumentException error) {
+            return ResponseEntity.badRequest().body(error.getMessage());
+        }
+    }
+
+    /**
      * Opens a project in VSCode.
      * 
      * @param id The project ID.
@@ -425,17 +469,11 @@ public class WorkspaceController {
     @ResponseBody
     public ResponseEntity<String> openVsCode(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
-        final String absolutePath = project.getAbsolutePath();
+        final File projectDirectory = projectDirectory(project);
+        final String absolutePath = projectDirectory.getAbsolutePath();
         log.info("Opening project '{}' in VSCode (path: {})", project.getArtifactId(), absolutePath);
         try {
-            final String os = System.getProperty("os.name").toLowerCase();
-            final ProcessBuilder pb;
-            if (os.contains("win")) {
-                pb = new ProcessBuilder("cmd.exe", "/c", "code", absolutePath);
-            } else {
-                pb = new ProcessBuilder("code", absolutePath);
-            }
-            pb.start();
+            desktopLauncherService.openVsCode(projectDirectory);
             return ResponseEntity.ok("Opening VSCode...");
         } catch (final Exception e) {
             log.error("Failed to open VSCode: {}", e.getMessage(), e);
@@ -453,24 +491,59 @@ public class WorkspaceController {
     @ResponseBody
     public ResponseEntity<String> openExplorer(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
-        final String absolutePath = project.getAbsolutePath();
+        final File projectDirectory = projectDirectory(project);
+        final String absolutePath = projectDirectory.getAbsolutePath();
         log.info("Opening project '{}' in File Explorer (path: {})", project.getArtifactId(), absolutePath);
         try {
-            final String os = System.getProperty("os.name").toLowerCase();
-            final ProcessBuilder pb;
-            if (os.contains("win")) {
-                pb = new ProcessBuilder("explorer.exe", absolutePath);
-            } else if (os.contains("mac")) {
-                pb = new ProcessBuilder("open", absolutePath);
-            } else {
-                pb = new ProcessBuilder("xdg-open", absolutePath);
-            }
-            pb.start();
+            desktopLauncherService.openExplorer(projectDirectory);
             return ResponseEntity.ok("Opening File Explorer...");
         } catch (final Exception e) {
             log.error("Failed to open File Explorer: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body("Failed to open File Explorer: " + e.getMessage());
         }
+    }
+
+    /**
+     * Opens a terminal rooted at the selected project directory.
+     *
+     * @param id project identifier
+     * @return launch result
+     */
+    @PostMapping("/projects/{id}/open-terminal")
+    @ResponseBody
+    public ResponseEntity<String> openTerminal(final @PathVariable Long id) {
+        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final File projectDirectory = projectDirectory(project);
+        try {
+            desktopLauncherService.openTerminal(projectDirectory);
+            return ResponseEntity.ok("Opening terminal...");
+        } catch (final IOException error) {
+            log.error("Failed to open terminal for project '{}': {}", project.getArtifactId(), error.getMessage());
+            return ResponseEntity.internalServerError().body("Failed to open terminal: " + error.getMessage());
+        }
+    }
+
+    /**
+     * Resolves the absolute project path from stored absolute or relative data.
+     *
+     * @param project project to resolve
+     * @return project directory
+     */
+    private File projectDirectory(final MavenProject project) {
+        return new File(absoluteProjectPath(project));
+    }
+
+    /**
+     * Resolves a portable absolute path for a project.
+     *
+     * @param project project to resolve
+     * @return absolute project path
+     */
+    private String absoluteProjectPath(final MavenProject project) {
+        if (project.getAbsolutePath() != null && !project.getAbsolutePath().isBlank()) {
+            return project.getAbsolutePath();
+        }
+        return new File(project.getWorkspace().getBasePath(), project.getRelativePath()).getAbsolutePath();
     }
 
 

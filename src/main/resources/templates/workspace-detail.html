@@ -92,6 +92,12 @@
                 </svg>
                 Export Order
             </a>
+            <a th:href="@{/workspaces/{id}/export-paths(id=${workspace.id})}" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Export only project paths in order">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export Paths
+            </a>
             <a th:href="@{/workspaces/{id}/export(id=${workspace.id})}" class="bg-indigo-50 text-indigo-600 border border-indigo-100 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-all font-medium flex items-center shadow-sm" title="Export full workspace including project paths">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -242,6 +248,11 @@
                         <button onclick="clearLogs()" class="text-gray-500 hover:text-gray-300 transition-colors p-1 hover:bg-gray-700 rounded" title="Clear All Logs">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                        <button onclick="downloadBuildLogs()" class="text-gray-400 hover:text-white transition-colors p-1 hover:bg-gray-700 rounded" title="Download current build log">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m0 0l-4-4m4 4l4-4m2 6v1a3 3 0 01-3 3H9a3 3 0 01-3-3v-1" />
                             </svg>
                         </button>
                     </div>
@@ -431,6 +442,14 @@
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                                             </svg>
                                         </button>
+                                        <button th:attr="hx-post=@{/projects/{id}/open-terminal(id=${project.id})}"
+                                                hx-swap="none"
+                                                class="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
+                                                title="Open Terminal">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                            </svg>
+                                        </button>
                                         <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
                                                 hx-target="#project-properties-modal-content"
                                                 hx-trigger="click"
@@ -461,13 +480,20 @@
                                             </svg>
                                             <span>Pull</span>
                                         </button>
-                                        <button th:attr="hx-post=@{/projects/{id}/build(id=${project.id})}" hx-swap="none" onclick="clearLogs()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md group/build" title="Maven Build">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white/80 group-hover/build:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            <span>Build</span>
-                                        </button>
+                                        <details class="relative group/build">
+                                            <summary class="list-none cursor-pointer flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md" title="Choose Maven build range">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span>Build</span>
+                                            </summary>
+                                            <div class="absolute right-0 z-30 mt-1 w-44 rounded-lg bg-white border border-gray-200 shadow-xl overflow-hidden">
+                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='ONLY')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Only this module</button>
+                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='FROM')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Build from here</button>
+                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='THROUGH')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Build through here</button>
+                                            </div>
+                                        </details>
                                         <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
                                                 hx-confirm="Are you sure you want to remove this project and all its submodules?"
                                                 class="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
@@ -693,6 +719,7 @@
 
         let activeTab = 'Global';
         const projectTabs = { 'Global': true };
+        const logLines = { 'Global': [] };
 
         stompClient.connect({}, function (frame) {
             stompClient.subscribe('/topic/logs', function (message) {
@@ -873,20 +900,26 @@
         }
 
         function appendLog(label, content) {
+            const normalizedLabel = label || 'Global';
+            const normalizedContent = content == null ? '' : String(content);
+
             // Append to Global tab
-            appendLineToContainer('Global', label, content);
+            logLines.Global.push((normalizedLabel === 'Global' ? '' : `[${normalizedLabel}] `) + normalizedContent);
+            appendLineToContainer('Global', label, normalizedContent);
 
             // Append to specific project tab
             if (label && label !== 'Global') {
                 if (!projectTabs[label]) {
                     createTab(label);
                 }
-                appendLineToContainer(label, null, content);
+                logLines[label].push(normalizedContent);
+                appendLineToContainer(label, null, normalizedContent);
             }
         }
 
         function createTab(label) {
             projectTabs[label] = true;
+            logLines[label] = [];
             const tabContainer = document.getElementById('log-tabs');
             
             const button = document.createElement('button');
@@ -952,6 +985,7 @@
             if (container) container.remove();
             
             delete projectTabs[label];
+            delete logLines[label];
             
             if (activeTab === label) {
                 switchTab('Global');
@@ -979,6 +1013,7 @@
         }
 
         function clearLogs() {
+            logLines.Global = [];
             // Reset Global container
             const globalContainer = document.getElementById('log-container-Global');
             globalContainer.innerHTML = `
@@ -1000,10 +1035,47 @@
                     if (tab) tab.remove();
                     if (container) container.remove();
                     delete projectTabs[label];
+                    delete logLines[label];
                 }
             });
 
             switchTab('Global');
+        }
+
+        function startRangeBuild(button) {
+            clearLogs();
+            button.closest('details').removeAttribute('open');
+        }
+
+        function downloadBuildLogs() {
+            const tabNames = Object.keys(logLines);
+            const hasOutput = tabNames.some(label => logLines[label].length > 0);
+            if (!hasOutput) {
+                showLocalActionMessage('No build output is available to download.', true);
+                return;
+            }
+
+            const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || 'workspace';
+            const sections = tabNames.map(label => `===== ${label} =====\n${logLines[label].join('\n')}`);
+            const content = `Workspace: ${workspaceName}\nDownloaded: ${new Date().toISOString()}\n\n${sections.join('\n\n')}\n`;
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `build-log-${workspaceName.replace(/[^a-zA-Z0-9-_]/g, '_')}.txt`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function showLocalActionMessage(message, isError) {
+            const container = document.getElementById('action-summary-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `glass bg-white/95 border rounded-2xl shadow-2xl p-4 text-sm ${isError ? 'border-red-200 text-red-700' : 'border-green-200 text-green-700'}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
         }
 
         function copyToClipboard(btn) {
@@ -1138,6 +1210,11 @@
             }
             updateSelectedCount();
             initializeProjectSorting();
+        });
+
+        document.addEventListener('htmx:responseError', function(event) {
+            const message = event.detail.xhr.responseText || 'The requested action could not be completed.';
+            showLocalActionMessage(message, true);
         });
 
         function toggleAllCheckboxes(source) {
