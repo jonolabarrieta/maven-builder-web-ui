@@ -30,11 +30,21 @@ MvnBuilder is a robust administrative dashboard designed to manage complex Maven
 
 ## 🤖 Built with AI
 
-This project is a testament to the power of modern Agentic AI. It was developed entirely through pair programming with **Antigravity**, utilizing a state-of-the-art multi-model orchestration:
+This project is a testament to the power of modern Agentic AI. Development has been supported by **Antigravity** and **Codex**, using a multi-model workflow across several model generations.
 
-- **Gemini 3.1 Pro**: Orchestration, complex logic refactoring, and architectural design.
-- **Gemini 3 Flash**: Rapid iteration, UI polish, and routine coding tasks.
-- **Claude 4.6 Opus**: High-precision debugging and complex algorithmic optimizations.
+### Models used
+
+- Gemini 3.1 Pro
+- Gemini 3 Flash
+- Gemini 3.5
+- Gemini 3.7
+- Gemini 3.8
+- Claude 4.6 Opus
+- GPT-5.6 Luna
+- GPT-5.6 Terra
+- GPT-5.6 Sol
+- GPT-6 Astra
+- GPT-6 Sol
 
 ---
 
