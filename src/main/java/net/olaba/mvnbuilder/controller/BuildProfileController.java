@@ -2,10 +2,15 @@ package net.olaba.mvnbuilder.controller;
 
 import net.olaba.mvnbuilder.entities.BuildProfile;
 import net.olaba.mvnbuilder.repository.BuildProfileRepository;
+import net.olaba.mvnbuilder.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.util.List;
 
@@ -18,6 +23,18 @@ import java.util.List;
 public class BuildProfileController {
 
     private final BuildProfileRepository buildProfileRepository;
+    private final WorkspaceService workspaceService;
+
+    private String normalizeVersionProfileId(final String versionProfileId) {
+        if (versionProfileId == null || versionProfileId.isBlank()) {
+            return null;
+        }
+        final String value = versionProfileId.trim();
+        if (value.length() > 255) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Maven profile ID is too long");
+        }
+        return value;
+    }
 
     /**
      * Retrieves the profile selector fragment. Creates a default profile if none
@@ -60,11 +77,14 @@ public class BuildProfileController {
     @PostMapping("/{id}/activate")
     @ResponseBody
     public String activateProfile(final @PathVariable Long id) {
+        final BuildProfile selected = buildProfileRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         final List<BuildProfile> allProfiles = buildProfileRepository.findAll();
         for (final BuildProfile profile : allProfiles) {
             profile.setDefault(profile.getId().equals(id));
         }
         buildProfileRepository.saveAll(allProfiles);
+        workspaceService.refreshDisplayedVersions(selected.getVersionProfileId());
         return "Activated";
     }
 
@@ -77,13 +97,30 @@ public class BuildProfileController {
      * @return The updated profile selector fragment.
      */
     @PostMapping("/add")
-    public String addProfile(final @RequestParam String name, final @RequestParam String command, final Model model) {
+    public String addProfile(final @RequestParam String name, final @RequestParam String command,
+            final @RequestParam(required = false) String versionProfileId, final Model model) {
         final BuildProfile newProfile = BuildProfile.builder()
                 .withName(name)
                 .withCommand(command)
+                .withVersionProfileId(normalizeVersionProfileId(versionProfileId))
                 .withIsDefault(false)
                 .build();
         buildProfileRepository.save(newProfile);
+        return getProfileSelector(model);
+    }
+
+    @PostMapping("/{id}/version-profile")
+    public String updateVersionProfile(final @PathVariable Long id,
+            final @RequestParam(required = false) String versionProfileId, final Model model,
+            final HttpServletResponse response) {
+        final BuildProfile profile = buildProfileRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        profile.setVersionProfileId(normalizeVersionProfileId(versionProfileId));
+        buildProfileRepository.save(profile);
+        if (profile.isDefault()) {
+            workspaceService.refreshDisplayedVersions(profile.getVersionProfileId());
+            response.setHeader("HX-Refresh", "true");
+        }
         return getProfileSelector(model);
     }
 

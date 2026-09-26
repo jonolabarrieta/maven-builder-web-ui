@@ -1,8 +1,10 @@
 package net.olaba.mvnbuilder.service;
 
 import net.olaba.mvnbuilder.entities.MavenProject;
+import net.olaba.mvnbuilder.entities.BuildProfile;
 import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.repository.MavenProjectRepository;
+import net.olaba.mvnbuilder.repository.BuildProfileRepository;
 import net.olaba.mvnbuilder.repository.WorkspaceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,9 @@ class WorkspaceImportExportTest {
 
     @Mock
     private GitService gitService;
+
+    @Mock
+    private BuildProfileRepository buildProfileRepository;
 
     @InjectMocks
     private WorkspaceService workspaceService;
@@ -96,7 +101,10 @@ class WorkspaceImportExportTest {
                 .withGroupId("com.test")
                 .withVersion("1.0")
                 .build();
-        when(mavenService.parsePom(any(File.class), any())).thenReturn(parsedProj);
+        when(buildProfileRepository.findByIsDefaultTrue()).thenReturn(Optional.of(
+                BuildProfile.builder().withName("CI").withCommand("-B install")
+                        .withVersionProfileId("batsdlc").withIsDefault(true).build()));
+        when(mavenService.parsePom(any(File.class), any(), eq("batsdlc"))).thenReturn(parsedProj);
         when(gitService.getCurrentBranch(any())).thenReturn("main");
 
         Workspace imported = workspaceService.importWorkspace(textConfig);
@@ -108,6 +116,7 @@ class WorkspaceImportExportTest {
         assertEquals("path/to/exclude1", imported.getExcludedPaths().get(0));
 
         verify(mavenProjectRepository, times(1)).saveAll(any());
+        verify(mavenService).parsePom(any(File.class), any(), eq("batsdlc"));
         
         // Clean up temp files
         java.nio.file.Files.delete(tempProj1.resolve("pom.xml"));

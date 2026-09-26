@@ -30,6 +30,9 @@ public class BuildProfile {
     @Column(nullable = false)
     private String command;
 
+    /** Maven profile whose properties determine the version shown in the UI. */
+    private String versionProfileId;
+
     /** Flag indicating if this is the default profile for builds. */
     @Column(nullable = false)
     private boolean isDefault;

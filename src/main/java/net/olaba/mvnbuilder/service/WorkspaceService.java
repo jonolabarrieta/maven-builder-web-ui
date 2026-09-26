@@ -3,6 +3,7 @@ package net.olaba.mvnbuilder.service;
 import net.olaba.mvnbuilder.entities.MavenProject;
 import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.repository.MavenProjectRepository;
+import net.olaba.mvnbuilder.repository.BuildProfileRepository;
 import net.olaba.mvnbuilder.repository.WorkspaceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,38 @@ public class WorkspaceService {
     private final MavenProjectRepository mavenProjectRepository;
     private final MavenService mavenService;
     private final GitService gitService;
+    private final BuildProfileRepository buildProfileRepository;
+
+    private String activeVersionProfileId() {
+        return buildProfileRepository.findByIsDefaultTrue()
+                .map(profile -> profile.getVersionProfileId()).orElse(null);
+    }
+
+    @Transactional
+    public void refreshDisplayedVersions(final String versionProfileId) {
+        final List<MavenProject> changed = new ArrayList<>();
+        for (final MavenProject project : mavenProjectRepository.findAll()) {
+            if (project.getAbsolutePath() == null) {
+                continue;
+            }
+            final File pomFile = new File(project.getAbsolutePath(), "pom.xml");
+            if (!pomFile.isFile()) {
+                continue;
+            }
+            try {
+                final String version = mavenService.resolveVersion(pomFile, versionProfileId);
+                if (version != null && !version.equals(project.getVersion())) {
+                    project.setVersion(version);
+                    changed.add(project);
+                }
+            } catch (final RuntimeException ignored) {
+                // Keep the last known version if this POM cannot be read.
+            }
+        }
+        if (!changed.isEmpty()) {
+            mavenProjectRepository.saveAll(changed);
+        }
+    }
 
     /**
      * Retrieves all configured workspaces.
@@ -202,6 +235,7 @@ public class WorkspaceService {
 
         final List<File> pomFiles = new ArrayList<>();
         findPomFiles(baseDir, pomFiles);
+        final String versionProfileId = activeVersionProfileId();
 
         // Get excluded paths
         final Set<String> excludedPaths = new HashSet<>(workspace.getExcludedPaths());
@@ -234,7 +268,7 @@ public class WorkspaceService {
             }
 
             if (!excluded) {
-                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
                 final MavenProject existing = existingMap.get(projectData.getRelativePath());
 
                 final MavenProject projectToSave;
@@ -291,7 +325,7 @@ public class WorkspaceService {
                 final List<File> extPomFiles = new ArrayList<>();
                 findPomFiles(extDir, extPomFiles);
                 for (final File pomFile : extPomFiles) {
-                    final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                    final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
                     final MavenProject existing = existingMap.get(projectData.getRelativePath());
 
                     final MavenProject projectToSave;
@@ -339,6 +373,7 @@ public class WorkspaceService {
         }
         final List<File> pomFiles = new ArrayList<>();
         findPomFiles(projectDir, pomFiles);
+        final String versionProfileId = activeVersionProfileId();
 
         // Load existing projects for the workspace first in a single query
         final List<MavenProject> existingProjects = mavenProjectRepository
@@ -350,7 +385,7 @@ public class WorkspaceService {
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
 
         for (final File pomFile : pomFiles) {
-            final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+            final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
             final MavenProject existing = existingMap.get(projectData.getRelativePath());
 
             final MavenProject projectToSave;
@@ -660,6 +695,7 @@ public class WorkspaceService {
         workspace = workspaceRepository.save(workspace);
         
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+        final String versionProfileId = activeVersionProfileId();
         int executionOrder = 0;
         final List<MavenProject> projectsToSave = new ArrayList<>();
 
@@ -671,7 +707,7 @@ public class WorkspaceService {
             
             final File pomFile = new File(projectDir, "pom.xml");
             if (pomFile.exists()) {
-                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath());
+                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
                 projectData.setWorkspace(workspace);
                 projectData.setExecutionOrder(executionOrder++);
                 

@@ -9,7 +9,13 @@ import net.olaba.mvnbuilder.entities.MavenProject;
 import java.io.File;
 import java.io.FileReader;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Properties;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -17,6 +23,10 @@ import java.util.stream.Collectors;
  */
 @Service
 public class MavenService {
+
+    private static final Pattern PROPERTY = Pattern.compile("\\$\\{([^}]+)}");
+
+    private record PomModel(File file, Model model) {}
 
     /**
      * Parses a pom.xml file into a MavenProject domain object.
@@ -28,6 +38,10 @@ public class MavenService {
      * @throws RuntimeException if parsing fails.
      */
     public MavenProject parsePom(final File pomFile, final String workspaceBasePath) {
+        return parsePom(pomFile, workspaceBasePath, null);
+    }
+
+    public MavenProject parsePom(final File pomFile, final String workspaceBasePath, final String versionProfileId) {
         try (final FileReader reader = new FileReader(pomFile)) {
             final MavenXpp3Reader mavenReader = new MavenXpp3Reader();
             final Model model = mavenReader.read(reader);
@@ -39,11 +53,7 @@ public class MavenService {
             }
             groupId = resolveProperty(groupId, model, pomFile);
 
-            String version = model.getVersion();
-            if (version == null && model.getParent() != null) {
-                version = model.getParent().getVersion();
-            }
-            version = resolveProperty(version, model, pomFile);
+            final String version = resolveVersion(model, pomFile, versionProfileId);
 
             final String absolutePath = pomFile.getParentFile().getAbsolutePath();
             String relativePath;
@@ -85,6 +95,138 @@ public class MavenService {
         } catch (final Exception e) {
             throw new RuntimeException("Failed to parse POM: " + pomFile.getAbsolutePath(), e);
         }
+    }
+
+    public String resolveVersion(final File pomFile, final String versionProfileId) {
+        try (final FileReader reader = new FileReader(pomFile)) {
+            return resolveVersion(new MavenXpp3Reader().read(reader), pomFile, versionProfileId);
+        } catch (final Exception e) {
+            throw new RuntimeException("Failed to parse POM: " + pomFile.getAbsolutePath(), e);
+        }
+    }
+
+    private String resolveVersion(final Model model, final File pomFile, final String versionProfileId) {
+        final List<PomModel> lineage = new ArrayList<>();
+        lineage.add(new PomModel(pomFile, model));
+        final Set<String> visited = new HashSet<>();
+        visited.add(pomFile.getAbsolutePath());
+        while (lineage.get(lineage.size() - 1).model().getParent() != null) {
+            final PomModel parent = loadParent(lineage.get(lineage.size() - 1));
+            if (parent == null || !visited.add(parent.file().getAbsolutePath())) {
+                break;
+            }
+            lineage.add(parent);
+        }
+        Collections.reverse(lineage);
+
+        final int last = lineage.size() - 1;
+        final String selected = versionProfileId == null || versionProfileId.isBlank()
+                ? null : versionProfileId.trim();
+        final String profiled = selected == null ? null : resolveVersionAt(lineage, last, selected, new HashSet<>());
+        if (profiled != null) {
+            return profiled;
+        }
+        final String base = resolveVersionAt(lineage, last, null, new HashSet<>());
+        if (base != null) {
+            return base;
+        }
+        final Model current = lineage.get(last).model();
+        return current.getVersion() != null ? current.getVersion()
+                : current.getParent() != null ? current.getParent().getVersion() : null;
+    }
+
+    private PomModel loadParent(final PomModel child) {
+        final org.apache.maven.model.Parent parent = child.model().getParent();
+        final String relativePath = parent.getRelativePath();
+        if (relativePath == null || !relativePath.isEmpty()) {
+            File file = new File(child.file().getParentFile(), relativePath == null ? "../pom.xml" : relativePath);
+            if (file.isDirectory()) {
+                file = new File(file, "pom.xml");
+            }
+            final PomModel local = readMatchingParent(file, parent);
+            if (local != null) {
+                return local;
+            }
+        }
+        final String path = parent.getGroupId().replace('.', '/') + "/" + parent.getArtifactId() + "/"
+                + parent.getVersion() + "/" + parent.getArtifactId() + "-" + parent.getVersion() + ".pom";
+        return readMatchingParent(new File(System.getProperty("user.home"), ".m2/repository/" + path), parent);
+    }
+
+    private PomModel readMatchingParent(final File file, final org.apache.maven.model.Parent parent) {
+        if (!file.isFile()) {
+            return null;
+        }
+        try (final FileReader reader = new FileReader(file)) {
+            final Model model = new MavenXpp3Reader().read(reader);
+            final String groupId = model.getGroupId() != null ? model.getGroupId()
+                    : model.getParent() != null ? model.getParent().getGroupId() : null;
+            if (parent.getGroupId().equals(groupId) && parent.getArtifactId().equals(model.getArtifactId())) {
+                return new PomModel(file, model);
+            }
+        } catch (final Exception ignored) {
+            // A parent not available locally cannot contribute profile properties.
+        }
+        return null;
+    }
+
+    private String resolveVersionAt(final List<PomModel> lineage, final int index, final String profileId,
+            final Set<String> resolving) {
+        final Model model = lineage.get(index).model();
+        final String expression = model.getVersion() != null ? model.getVersion()
+                : model.getParent() != null ? model.getParent().getVersion() : null;
+        return resolveExpression(expression, lineage, index, profileId, effectiveProperties(lineage, index, profileId),
+                resolving);
+    }
+
+    private Properties effectiveProperties(final List<PomModel> lineage, final int index, final String profileId) {
+        final Properties properties = new Properties();
+        for (int i = 0; i <= index; i++) {
+            final Model model = lineage.get(i).model();
+            properties.putAll(model.getProperties());
+            if (profileId != null) {
+                model.getProfiles().stream().filter(profile -> profileId.equals(profile.getId())).findFirst()
+                        .ifPresent(profile -> properties.putAll(profile.getProperties()));
+            }
+        }
+        return properties;
+    }
+
+    private String resolveExpression(final String expression, final List<PomModel> lineage, final int index,
+            final String profileId, final Properties properties, final Set<String> resolving) {
+        if (expression == null) {
+            return null;
+        }
+        final Matcher matcher = PROPERTY.matcher(expression);
+        final StringBuffer result = new StringBuffer();
+        while (matcher.find()) {
+            final String name = matcher.group(1);
+            final String key = index + ":" + name;
+            if (!resolving.add(key)) {
+                return null;
+            }
+            final Model model = lineage.get(index).model();
+            final String value;
+            if ("project.parent.version".equals(name) || "parent.version".equals(name)) {
+                value = index > 0 ? resolveVersionAt(lineage, index - 1, profileId, resolving)
+                        : model.getParent() == null ? null
+                        : resolveExpression(model.getParent().getVersion(), lineage, index, profileId, properties, resolving);
+            } else if ("project.version".equals(name) || "pom.version".equals(name)) {
+                value = resolveVersionAt(lineage, index, profileId, resolving);
+            } else if ("project.groupId".equals(name) || "pom.groupId".equals(name)) {
+                value = model.getGroupId() != null ? model.getGroupId()
+                        : model.getParent() == null ? null : model.getParent().getGroupId();
+            } else {
+                value = resolveExpression(properties.getProperty(name), lineage, index, profileId, properties, resolving);
+            }
+            resolving.remove(key);
+            if (value == null) {
+                return null;
+            }
+            matcher.appendReplacement(result, Matcher.quoteReplacement(value));
+        }
+        matcher.appendTail(result);
+        return result.toString();
     }
 
     /**
