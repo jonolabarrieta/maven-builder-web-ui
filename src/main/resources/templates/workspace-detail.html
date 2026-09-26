@@ -1079,6 +1079,27 @@
         }
 
         // Checkbox logic
+        let selectedProjectsBeforeRefresh = null;
+
+        document.addEventListener('htmx:beforeSwap', function(event) {
+            if (event.detail.target.id !== 'project-table-body') return;
+            selectedProjectsBeforeRefresh = new Set(
+                Array.from(document.querySelectorAll('#project-table-body .project-checkbox:checked'), checkbox => checkbox.value)
+            );
+        });
+
+        document.addEventListener('htmx:afterSwap', function(event) {
+            if (event.detail.target.id !== 'project-table-body') return;
+            if (selectedProjectsBeforeRefresh !== null) {
+                document.querySelectorAll('#project-table-body .project-checkbox').forEach(checkbox => {
+                    checkbox.checked = selectedProjectsBeforeRefresh.has(checkbox.value);
+                });
+                selectedProjectsBeforeRefresh = null;
+            }
+            updateSelectedCount();
+            initializeProjectSorting();
+        });
+
         function toggleAllCheckboxes(source) {
             const checkboxes = document.getElementsByName('project-checkbox');
             for(let i=0, n=checkboxes.length; i<n; i++) {
@@ -1094,6 +1115,11 @@
                 if(checkboxes[i].checked) count++;
             }
             document.getElementById('selected-count').innerText = count;
+            const selectAll = document.getElementById('select-all');
+            if (selectAll) {
+                selectAll.checked = checkboxes.length > 0 && count === checkboxes.length;
+                selectAll.indeterminate = count > 0 && count < checkboxes.length;
+            }
         }
 
         function executeBulkAction(action, overrideIds = null) {
@@ -1316,7 +1342,7 @@
         }
 
         // SortableJS init
-        document.addEventListener('DOMContentLoaded', function() {
+        function initializeProjectSorting() {
             const tbody = document.getElementById('project-table-body');
             if (tbody) {
                 new Sortable(tbody, {
@@ -1345,7 +1371,8 @@
                     }
                 });
             }
-        });
+        }
+        document.addEventListener('DOMContentLoaded', initializeProjectSorting);
     </script>
     <!-- Profile Manager Modal Placeholder -->
     <div id="profile-manager-modal-container"></div>
