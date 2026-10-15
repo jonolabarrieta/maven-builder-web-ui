@@ -3,12 +3,14 @@ package net.olaba.mvnbuilder.controller;
 import net.olaba.mvnbuilder.entities.MavenProject;
 import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.model.M2ProjectInfo;
+import net.olaba.mvnbuilder.model.WorkspaceProjectHierarchy;
 import net.olaba.mvnbuilder.repository.MavenProjectRepository;
 
 import net.olaba.mvnbuilder.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -147,26 +149,39 @@ public class WorkspaceController {
     public String viewWorkspace(final @PathVariable Long id, final Model model) {
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         model.addAttribute("workspace", workspace);
-        model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
+        addProjectTableModel(id, model);
         model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "workspace-detail";
     }
 
     /**
-     * Asynchronously refreshes the Git branch status and returns the project table body fragment.
+     * Adds the ordered project rows and child indicators from one hierarchy snapshot.
      * 
-     * @param id    The workspace ID.
-     * @param model The UI model.
-     * @return The project table body fragment template path.
+     * @param id workspace ID
+     * @param model model to populate
      */
-    @GetMapping("/workspaces/{id}/git-status-table")
-    public String getGitStatusTable(final @PathVariable Long id, final Model model) {
+    private void addProjectTableModel(final Long id, final Model model) {
+        final WorkspaceProjectHierarchy hierarchy = workspaceService.getProjectHierarchyForWorkspace(id);
+        model.addAttribute("projects", hierarchy.topLevelProjects());
+        model.addAttribute("projectIdsWithChildren", hierarchy.projectIdsWithChildren());
+    }
+
+    /** One branch update addressed by the immutable project identifier. */
+    public record GitBranchUpdate(Long projectId, String branch) { }
+
+    /**
+     * Asynchronously refreshes branch data without returning replaceable project rows.
+     *
+     * @param id workspace ID
+     * @return one JSON batch of escaped branch values
+     */
+    @GetMapping(value = "/workspaces/{id}/git-status-table", produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public List<GitBranchUpdate> getGitStatusTable(final @PathVariable Long id) {
         log.info("Asynchronously refreshing Git status for workspace ID {}", id);
-        workspaceService.refreshGitStatus(id);
-        model.addAttribute("workspace", workspaceService.getWorkspace(id).orElseThrow());
-        model.addAttribute("projects", workspaceService.getProjectsForWorkspace(id, true));
-        model.addAttribute("isAsyncRefresh", true);
-        return "workspace-detail :: project-table-body";
+        return workspaceService.refreshGitStatus(id).stream()
+                .map(project -> new GitBranchUpdate(project.getId(), project.getGitBranch()))
+                .toList();
     }
 
     /**
@@ -190,12 +205,21 @@ public class WorkspaceController {
     /**
      * Refreshes the workspace state.
      * 
-     * @param id The workspace ID.
-     * @return Redirect to workspace detail.
+     * @param id workspace ID
+     * @param htmxRequest whether HTMX submitted the form
+     * @param model model for a fragment response
+     * @return a table body for HTMX, or a redirect for a normal form
      */
     @PostMapping("/workspaces/{id}/refresh")
-    public String refreshWorkspace(final @PathVariable Long id) {
+    public String refreshWorkspace(final @PathVariable Long id,
+            final @RequestHeader(value = "HX-Request", required = false, defaultValue = "false") boolean htmxRequest,
+            final Model model) {
         workspaceService.refreshWorkspace(id);
+        if (htmxRequest) {
+            model.addAttribute("workspace", workspaceService.getWorkspace(id).orElseThrow());
+            addProjectTableModel(id, model);
+            return "workspace-detail :: project-table-body";
+        }
         return "redirect:/workspaces/" + id;
     }
 

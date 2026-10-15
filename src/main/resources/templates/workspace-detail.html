@@ -70,8 +70,10 @@
                 </svg>
                 Add Project
             </button>
-            <form th:action="@{/workspaces/{id}/refresh(id=${workspace.id})}" method="POST">
-                <button type="submit" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Refresh projects from disk">
+            <form id="workspace-refresh-form" th:action="@{/workspaces/{id}/refresh(id=${workspace.id})}"
+                  th:hx-post="@{/workspaces/{id}/refresh(id=${workspace.id})}" hx-target="#project-table-body"
+                  hx-swap="outerHTML" method="POST" data-no-spinner="true">
+                <button id="workspace-refresh-button" type="submit" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" title="Refresh projects from disk">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
@@ -334,6 +336,17 @@
         <div class="w-full">
             <!-- Projects Table -->
 
+            <div id="workspace-git-status" th:data-url="@{/workspaces/{id}/git-status-table(id=${workspace.id})}"
+                 class="mb-3 text-xs text-gray-500" role="status" aria-live="polite">Using cached Git branches.</div>
+            <div id="workspace-refresh-status" class="mb-3 text-xs text-gray-500" role="status" aria-live="polite"></div>
+            <div id="workspace-refresh-overlay" class="fixed inset-0 z-[90] hidden flex items-center justify-center bg-slate-900/30 backdrop-blur-[2px]"
+                 role="status" aria-live="polite" aria-hidden="true">
+                <div class="flex items-center gap-3 rounded-xl bg-white px-6 py-4 shadow-xl border border-gray-100">
+                    <span class="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" aria-hidden="true"></span>
+                    <span id="workspace-refresh-phase" class="text-sm font-semibold text-gray-700">Refreshing projects...</span>
+                </div>
+            </div>
+
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
                 <table id="project-table" class="w-full text-left">
                     <thead class="bg-gray-50 border-b border-gray-100">
@@ -349,18 +362,14 @@
                     </thead>
                     <tbody id="project-table-body" 
                            th:fragment="project-table-body" 
-                           class="divide-y divide-gray-50"
-                           th:hx-get="${isAsyncRefresh} ? null : @{/workspaces/{id}/git-status-table(id=${workspace.id})}"
-                           th:hx-trigger="${isAsyncRefresh} ? null : 'load delay:100ms'"
-                           th:hx-swap="${isAsyncRefresh} ? null : 'outerHTML'"
-                           th:data-no-spinner="${isAsyncRefresh} ? null : 'true'">
+                           class="divide-y divide-gray-50">
                         <tr th:each="project : ${projects}" 
                             class="hover:bg-gray-50/50 transition-all duration-300 group cursor-move" 
                             th:classappend="${!project.enabled ? 'opacity-40 grayscale' : ''}"
                             th:attr="data-id=${project.id}"
                             th:id="'project-row-' + ${project.id}">
                             <td class="px-6 py-4">
-                                <input type="checkbox" name="project-checkbox" th:value="${project.id}" onchange="updateSelectedCount()" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                <input type="checkbox" name="project-checkbox" th:value="${project.id}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                             </td>
                             <td class="px-6 py-4">
                                 <button th:attr="hx-post=@{/projects/{id}/toggle-enabled(id=${project.id})}"
@@ -407,11 +416,11 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/branch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                     </svg>
-                                    <span class="text-sm font-medium text-gray-600" th:text="${project.gitBranch}">main</span>
+                                    <span class="text-sm font-medium text-gray-600" th:id="'git-branch-' + ${project.id}" th:text="${project.gitBranch}">main</span>
                                 </button>
                             </td>
                             <td class="px-6 py-4">
-                                <button th:if="${project.hasChildren()}"
+                                <button th:if="${projectIdsWithChildren.contains(project.id)}"
                                         th:attr="hx-get=@{/projects/{id}/children(id=${project.id})}"
                                         hx-target="#children-modal-content"
                                         hx-trigger="click"
@@ -422,7 +431,7 @@
                                     </svg>
                                     <span class="text-[10px] font-bold uppercase tracking-wider">View Recursive</span>
                                 </button>
-                                <span th:unless="${project.hasChildren()}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
+                                <span th:unless="${projectIdsWithChildren.contains(project.id)}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex flex-wrap justify-end items-center gap-1">
@@ -1190,63 +1199,164 @@
             }
         }
 
-        // Checkbox logic
-        let selectedProjectsBeforeRefresh = null;
+        // Project selection is independent of the replaceable table markup.
+        const selectedProjectIds = new Set();
 
-        document.addEventListener('htmx:beforeSwap', function(event) {
-            if (event.detail.target.id !== 'project-table-body') return;
-            selectedProjectsBeforeRefresh = new Set(
-                Array.from(document.querySelectorAll('#project-table-body .project-checkbox:checked'), checkbox => checkbox.value)
-            );
-        });
-
-        document.addEventListener('htmx:afterSwap', function(event) {
-            if (event.detail.target.id !== 'project-table-body') return;
-            if (selectedProjectsBeforeRefresh !== null) {
-                document.querySelectorAll('#project-table-body .project-checkbox').forEach(checkbox => {
-                    checkbox.checked = selectedProjectsBeforeRefresh.has(checkbox.value);
-                });
-                selectedProjectsBeforeRefresh = null;
+        /** Keeps the selected IDs within the displayed list after an explicit rescan. */
+        function reconcileProjectSelection() {
+            const visibleIds = new Set(Array.from(
+                document.querySelectorAll('#project-table-body .project-checkbox'), checkbox => checkbox.value));
+            for (const id of selectedProjectIds) {
+                if (!visibleIds.has(id)) selectedProjectIds.delete(id);
             }
-            updateSelectedCount();
-            initializeProjectSorting();
-        });
+            renderProjectSelection();
+        }
 
-        document.addEventListener('htmx:responseError', function(event) {
-            const message = event.detail.xhr.responseText || 'The requested action could not be completed.';
-            showLocalActionMessage(message, true);
+        /** Renders checkboxes, count, and Select All from the same ID set. */
+        function renderProjectSelection() {
+            const checkboxes = document.querySelectorAll('#project-table-body .project-checkbox');
+            checkboxes.forEach(checkbox => { checkbox.checked = selectedProjectIds.has(checkbox.value); });
+            document.getElementById('selected-count').innerText = selectedProjectIds.size;
+            const selectAll = document.getElementById('select-all');
+            if (selectAll) {
+                selectAll.checked = checkboxes.length > 0 && selectedProjectIds.size === checkboxes.length;
+                selectAll.indeterminate = selectedProjectIds.size > 0 && selectedProjectIds.size < checkboxes.length;
+            }
+        }
+
+        document.addEventListener('change', function(event) {
+            if (!event.target.matches('#project-table-body .project-checkbox')) return;
+            if (event.target.checked) selectedProjectIds.add(event.target.value);
+            else selectedProjectIds.delete(event.target.value);
+            renderProjectSelection();
         });
 
         function toggleAllCheckboxes(source) {
-            const checkboxes = document.getElementsByName('project-checkbox');
-            for(let i=0, n=checkboxes.length; i<n; i++) {
-                checkboxes[i].checked = source.checked;
-            }
-            updateSelectedCount();
+            document.querySelectorAll('#project-table-body .project-checkbox').forEach(checkbox => {
+                if (source.checked) selectedProjectIds.add(checkbox.value);
+                else selectedProjectIds.delete(checkbox.value);
+            });
+            renderProjectSelection();
         }
 
         function updateSelectedCount() {
-            const checkboxes = document.getElementsByName('project-checkbox');
-            let count = 0;
-            for(let i=0, n=checkboxes.length; i<n; i++) {
-                if(checkboxes[i].checked) count++;
-            }
-            document.getElementById('selected-count').innerText = count;
-            const selectAll = document.getElementById('select-all');
-            if (selectAll) {
-                selectAll.checked = checkboxes.length > 0 && count === checkboxes.length;
-                selectAll.indeterminate = count > 0 && count < checkboxes.length;
+            renderProjectSelection();
+        }
+
+        let refreshInProgress = false;
+        let gitGeneration = 0;
+        let gitController = null;
+
+        /** Shows the exact phase of the one explicit Refresh operation. */
+        function setRefreshPhase(message) {
+            document.getElementById('workspace-refresh-phase').textContent = message;
+            document.getElementById('workspace-refresh-status').textContent = message;
+        }
+
+        /** Ends a Refresh only after its terminal Git or rescan result. */
+        function finishRefresh(message, isError) {
+            if (!refreshInProgress) return;
+            refreshInProgress = false;
+            const overlay = document.getElementById('workspace-refresh-overlay');
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-hidden', 'true');
+            document.getElementById('workspace-refresh-button').disabled = false;
+            const status = document.getElementById('workspace-refresh-status');
+            status.textContent = message;
+            status.classList.toggle('text-red-700', isError);
+            status.classList.toggle('text-green-700', !isError);
+        }
+
+        /** Invalidates an older background Git result before the project list changes. */
+        function cancelGitStatus() {
+            gitGeneration++;
+            if (gitController) gitController.abort();
+            gitController = null;
+        }
+
+        /** Applies one JSON batch to existing branch text nodes without replacing rows. */
+        async function requestGitStatus(forRefresh) {
+            cancelGitStatus();
+            const generation = gitGeneration;
+            const controller = new AbortController();
+            gitController = controller;
+            const status = document.getElementById('workspace-git-status');
+            status.textContent = 'Updating Git branches...';
+            try {
+                const response = await fetch(status.dataset.url, {
+                    signal: controller.signal,
+                    globalSpinner: false
+                });
+                if (!response.ok) throw new Error('Git status request failed');
+                const updates = await response.json();
+                if (!Array.isArray(updates)) throw new Error('Invalid Git status response');
+                if (generation !== gitGeneration) return;
+                updates.forEach(update => {
+                    const branch = document.getElementById(`git-branch-${update.projectId}`);
+                    if (branch) branch.textContent = update.branch || 'Unknown';
+                });
+                status.textContent = 'Git branches are up to date.';
+                if (forRefresh) finishRefresh('Projects and Git branches refreshed.', false);
+            } catch (error) {
+                if (generation !== gitGeneration) return;
+                status.textContent = 'Git branches could not be updated; cached values are shown.';
+                if (forRefresh) finishRefresh('Projects refreshed, but Git branches could not be updated.', true);
+            } finally {
+                if (generation === gitGeneration) gitController = null;
             }
         }
 
-        function executeBulkAction(action, overrideIds = null) {
-            const selectedIds = overrideIds || [];
-            if (!overrideIds) {
-                const checkboxes = document.getElementsByName('project-checkbox');
-                for(let i=0, n=checkboxes.length; i<n; i++) {
-                    if(checkboxes[i].checked) selectedIds.push(checkboxes[i].value);
-                }
+        /** Associates HTMX lifecycle events with the Refresh form. */
+        function isRefreshEvent(event) {
+            const detail = event.detail || {};
+            return detail.elt?.id === 'workspace-refresh-form'
+                || detail.requestConfig?.elt?.id === 'workspace-refresh-form';
+        }
+
+        document.addEventListener('htmx:beforeRequest', function(event) {
+            if (!isRefreshEvent(event)) return;
+            if (refreshInProgress) {
+                event.preventDefault();
+                return;
             }
+            refreshInProgress = true;
+            cancelGitStatus();
+            document.getElementById('workspace-refresh-button').disabled = true;
+            const overlay = document.getElementById('workspace-refresh-overlay');
+            overlay.classList.remove('hidden');
+            overlay.setAttribute('aria-hidden', 'false');
+            document.getElementById('workspace-refresh-status').classList.remove('text-red-700', 'text-green-700');
+            setRefreshPhase('Refreshing projects from disk...');
+        });
+
+        document.addEventListener('htmx:afterSwap', function(event) {
+            if (!refreshInProgress || event.detail.target?.id !== 'project-table-body') return;
+            reconcileProjectSelection();
+            initializeProjectSorting();
+            setRefreshPhase('Projects refreshed. Updating Git branches...');
+            requestGitStatus(true);
+        });
+
+        ['htmx:responseError', 'htmx:sendError', 'htmx:timeout', 'htmx:abort'].forEach(name => {
+            document.addEventListener(name, function(event) {
+                if (refreshInProgress && isRefreshEvent(event)) {
+                    finishRefresh('Projects could not be refreshed. Please retry.', true);
+                    return;
+                }
+                if (name === 'htmx:responseError') {
+                    const message = event.detail.xhr?.responseText || 'The requested action could not be completed.';
+                    showLocalActionMessage(message, true);
+                }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            reconcileProjectSelection();
+            requestGitStatus(false);
+        });
+
+        function executeBulkAction(action, overrideIds = null) {
+            const selectedIds = overrideIds || Array.from(selectedProjectIds);
 
             if (selectedIds.length === 0) {
                 ConfirmationModal.info({
@@ -1351,12 +1461,7 @@
         }
 
         function openBulkBranchModal() {
-            const checkboxes = document.getElementsByName('project-checkbox');
-            let checkedCount = 0;
-            for(let i=0, n=checkboxes.length; i<n; i++) {
-                if(checkboxes[i].checked) checkedCount++;
-            }
-            if (checkedCount === 0) {
+            if (selectedProjectIds.size === 0) {
                 ConfirmationModal.info({
                     title: 'No projects selected',
                     message: 'Select at least one project before changing branches.'
@@ -1381,11 +1486,7 @@
             }
             const createNew = document.getElementById('bulk-branch-create').checked;
             
-            const checkboxes = document.getElementsByName('project-checkbox');
-            const selectedIds = [];
-            for(let i=0, n=checkboxes.length; i<n; i++) {
-                if(checkboxes[i].checked) selectedIds.push(checkboxes[i].value);
-            }
+            const selectedIds = Array.from(selectedProjectIds);
             
             if (selectedIds.length === 0) {
                 ConfirmationModal.info({
@@ -1471,7 +1572,8 @@
         // SortableJS init
         function initializeProjectSorting() {
             const tbody = document.getElementById('project-table-body');
-            if (tbody) {
+            if (tbody && !tbody.dataset.sortableInitialized) {
+                tbody.dataset.sortableInitialized = 'true';
                 new Sortable(tbody, {
                     animation: 150,
                     ghostClass: 'bg-indigo-50',
