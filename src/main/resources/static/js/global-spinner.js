@@ -134,9 +134,14 @@
      * @return {boolean} true when global loading feedback is disabled
      */
     function isExcluded(element) {
-        return Boolean(element
-            && typeof element.closest === 'function'
-            && element.closest('[data-no-spinner]'));
+        if (!element || typeof element.closest !== 'function') {
+            return false;
+        }
+        const excluded = element.closest('[data-no-spinner]');
+        if (excluded instanceof HTMLFormElement && excluded.hasAttribute('hx-post') && !window.htmx) {
+            return false;
+        }
+        return Boolean(excluded);
     }
 
     /**
@@ -177,6 +182,9 @@
      * @return {boolean} true for HTMX-owned submissions
      */
     function isHtmxForm(form) {
+        if (!window.htmx) {
+            return false;
+        }
         const htmxSelector = '[hx-get], [hx-post], [hx-put], [hx-delete], [hx-patch], [hx-boost]';
         return form.matches(htmxSelector) || Boolean(form.closest('[hx-boost]'));
     }

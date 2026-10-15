@@ -2,6 +2,7 @@ package net.olaba.mvnbuilder.service;
 
 import net.olaba.mvnbuilder.entities.MavenProject;
 import net.olaba.mvnbuilder.entities.Workspace;
+import net.olaba.mvnbuilder.model.WorkspaceProjectHierarchy;
 import net.olaba.mvnbuilder.repository.MavenProjectRepository;
 import net.olaba.mvnbuilder.repository.BuildProfileRepository;
 import net.olaba.mvnbuilder.repository.WorkspaceRepository;
@@ -12,7 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -233,12 +236,12 @@ public class WorkspaceService {
             return; // Don't throw exception here, just don't import
         }
 
+        final Set<String> excludedPaths = new HashSet<>(workspace.getExcludedPaths());
         final List<File> pomFiles = new ArrayList<>();
-        findPomFiles(baseDir, pomFiles);
+        findPomFiles(baseDir, pomFiles, baseDir, excludedPaths);
         final String versionProfileId = activeVersionProfileId();
 
         // Get excluded paths
-        final Set<String> excludedPaths = new HashSet<>(workspace.getExcludedPaths());
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
 
         // Load existing projects for the workspace first in a single query
@@ -304,8 +307,7 @@ public class WorkspaceService {
             return;
         }
 
-        final List<MavenProject> externalParents = existingProjects.stream()
-                .filter(p -> isParentProject(p, existingProjects))
+        final List<MavenProject> externalParents = summarizeHierarchy(existingProjects).topLevelProjects().stream()
                 .filter(p -> {
                     if (p.getAbsolutePath() == null) {
                         return false;
@@ -426,8 +428,38 @@ public class WorkspaceService {
      * @param pomFiles The list to accumulate found files.
      */
     private void findPomFiles(final File dir, final List<File> pomFiles) {
+        findPomFiles(dir, pomFiles, null, Set.of());
+    }
+
+    /**
+     * Finds POMs while pruning workspace exclusions before descending into them.
+     * External manually added parents use the two-argument form without exclusions.
+     *
+     * @param dir current directory
+     * @param pomFiles discovered POMs
+     * @param baseDir workspace base directory, or null for external scans
+     * @param excludedPaths configured relative paths
+     */
+    private void findPomFiles(final File dir, final List<File> pomFiles, final File baseDir,
+            final Set<String> excludedPaths) {
+        boolean excludePom = false;
+        if (baseDir != null) {
+            String relativePath = baseDir.toPath().relativize(dir.toPath()).toString().replace('\\', '/');
+            if (relativePath.isEmpty()) {
+                relativePath = ".";
+            }
+            for (final String excludedPath : excludedPaths) {
+                final String normalized = excludedPath.replace('\\', '/');
+                if (relativePath.equals(normalized) || relativePath.startsWith(normalized + "/")) {
+                    if (!relativePath.equals(".")) {
+                        return;
+                    }
+                    excludePom = true;
+                }
+            }
+        }
         final File pom = new File(dir, "pom.xml");
-        if (pom.exists()) {
+        if (!excludePom && pom.exists()) {
             pomFiles.add(pom);
         }
 
@@ -444,7 +476,7 @@ public class WorkspaceService {
                         && !name.equals("dist")
                         && !name.equals("bin")
                         && !name.equals("gradle")) {
-                    findPomFiles(file, pomFiles);
+                    findPomFiles(file, pomFiles, baseDir, excludedPaths);
                 }
             }
         }
@@ -463,43 +495,101 @@ public class WorkspaceService {
         final List<MavenProject> projects = mavenProjectRepository
                 .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
         if (parentsOnly) {
-            return projects.stream()
-                    .filter(p -> isParentProject(p, projects))
-                    .collect(Collectors.toList());
+            return summarizeHierarchy(projects).topLevelProjects();
         }
         return projects;
     }
 
     /**
-     * Checks if a project is a top-level project in the given list.
+     * Returns the top-level rows and child indicators from the same repository query.
      * 
-     * @param project     The project to check.
-     * @param allProjects The list of all projects in the workspace.
-     * @return True if the project has no ancestors in the list.
+     * @param workspaceId the workspace identifier
+     * @return a hierarchy summary in execution order
      */
-    private boolean isParentProject(final MavenProject project, final List<MavenProject> allProjects) {
-        // A project is a parent if no other project in the workspace is its physical
-        // ancestor
-        for (final MavenProject other : allProjects) {
-            if (isChildOf(project, other)) {
-                return false;
+    public WorkspaceProjectHierarchy getProjectHierarchyForWorkspace(final Long workspaceId) {
+        final List<MavenProject> projects = mavenProjectRepository
+                .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
+        return summarizeHierarchy(projects);
+    }
+
+    /**
+     * Indexes stored paths so ancestry is checked by path depth rather than list size.
+     *
+     * @param allProjects the ordered project snapshot
+     * @return top-level projects and identifiers with descendants
+     */
+    private WorkspaceProjectHierarchy summarizeHierarchy(final List<MavenProject> allProjects) {
+        final Map<String, List<MavenProject>> byPath = new HashMap<>();
+        for (final MavenProject project : allProjects) {
+            if (project.getRelativePath() != null) {
+                final String path = project.getRelativePath().replace('\\', '/');
+                byPath.computeIfAbsent(path, ignored -> new ArrayList<>()).add(project);
             }
         }
-        return true;
+
+        final List<MavenProject> topLevel = new ArrayList<>();
+        final Set<Long> withChildren = new HashSet<>();
+        for (final MavenProject project : allProjects) {
+            final String path = project.getRelativePath();
+            if (path == null) {
+                topLevel.add(project);
+                continue;
+            }
+            final String normalized = path.replace('\\', '/');
+            boolean hasAncestor = false;
+            if (!normalized.equals(".")) {
+                hasAncestor = markAncestors(project, byPath.get("."), withChildren);
+            }
+            for (int slash = normalized.indexOf('/'); slash >= 0;
+                    slash = normalized.indexOf('/', slash + 1)) {
+                hasAncestor |= markAncestors(project, byPath.get(normalized.substring(0, slash)), withChildren);
+            }
+            if (!hasAncestor) {
+                topLevel.add(project);
+            }
+        }
+        return new WorkspaceProjectHierarchy(topLevel, withChildren);
+    }
+
+    /**
+     * Marks matching stored ancestors as parents of one project.
+     *
+     * @param project potential child
+     * @param ancestors projects at one ancestor path, or null
+     * @param withChildren accumulator of parent identifiers
+     * @return whether at least one distinct ancestor exists
+     */
+    private boolean markAncestors(final MavenProject project, final List<MavenProject> ancestors,
+            final Set<Long> withChildren) {
+        if (ancestors == null) {
+            return false;
+        }
+        boolean found = false;
+        for (final MavenProject ancestor : ancestors) {
+            if (ancestor.getId() != null && ancestor.getId().equals(project.getId())) {
+                continue;
+            }
+            found = true;
+            if (ancestor.getId() != null) {
+                withChildren.add(ancestor.getId());
+            }
+        }
+        return found;
     }
 
     /**
      * Refreshes the Git branch status for all projects in a workspace.
      * 
      * @param workspaceId The workspace ID.
+     * @return the top-level projects with their refreshed branch values
      */
-    public void refreshGitStatus(final Long workspaceId) {
+    public List<MavenProject> refreshGitStatus(final Long workspaceId) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
+        final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
         if (workspace.getBasePath() == null) {
-            return;
+            return projects;
         }
 
-        final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
         final List<MavenProject> updatedProjects = new java.util.ArrayList<>();
 
@@ -523,6 +613,7 @@ public class WorkspaceService {
         if (!updatedProjects.isEmpty()) {
             mavenProjectRepository.saveAll(updatedProjects);
         }
+        return projects;
     }
 
     /**
