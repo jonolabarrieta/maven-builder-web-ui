@@ -55,6 +55,7 @@ public class ProcessExecutionService {
     @Async
     public CompletableFuture<CommandResult> executeCommandWithJavaHome(final String label, final File directory, final String javaHome, final String... command) {
         final long startTime = System.currentTimeMillis();
+        final long startNanos = System.nanoTime();
         Process process = null;
         final java.util.List<String> output = new java.util.ArrayList<>();
         try {
@@ -107,14 +108,16 @@ public class ProcessExecutionService {
             // Wait for process completion and calculate metrics
             final int exitCode = process.waitFor();
             final long duration = System.currentTimeMillis() - startTime;
+            final long durationMs = Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
             final String durationStr = String.format("%.2f", duration / 1000.0);
 
             sendLog(label, "--- Finished with exit code: " + exitCode + " (Duration: " + durationStr + "s) ---");
-            return CompletableFuture.completedFuture(new CommandResult(exitCode, output));
+            return CompletableFuture.completedFuture(new CommandResult(exitCode, output, durationMs));
         } catch (Exception e) {
             log.error("Error executing command: {}", e.getMessage(), e);
             sendLog(label, "ERROR: " + e.getMessage());
-            return CompletableFuture.completedFuture(new CommandResult(-1, output));
+            final long durationMs = Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
+            return CompletableFuture.completedFuture(new CommandResult(-1, output, durationMs));
         } finally {
             if (process != null) {
                 activeProcesses.remove(process);

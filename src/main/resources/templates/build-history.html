@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="stylesheet" href="/css/app.css">
+    <title th:text="${workspace.name + ' - Build history'}">Build history</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <script src="/vendor/htmx.org/1.9.10/htmx.min.js" defer></script>
+    <script src="/js/global-spinner.js" defer></script>
+    <script src="/js/confirmation-modal.js" defer></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
+        .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+    </style>
+</head>
+<body class="text-gray-900">
+    <nav class="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3 sm:gap-4 shadow-sm">
+        <a th:href="@{/workspaces/{id}(id=${workspace.id})}" aria-label="Back to workspace" class="icon-button text-muted hover:text-gray-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+        </a>
+        <div class="flex items-center gap-2 border-l pl-3 sm:pl-4 min-w-0">
+            <h1 class="text-xl font-bold tracking-tight text-gray-800 truncate">Build history</h1>
+            <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md font-mono" th:text="${currentVersion != null ? 'v' + currentVersion : 'v1.1.0'}">v1.1.0</span>
+        </div>
+        <span class="ml-auto text-sm text-muted truncate" th:text="${workspace.name}">Workspace</span>
+    </nav>
+
+    <main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-gray-800">Build runs</h2>
+                <span class="text-sm text-muted" th:text="${history.totalRuns + (history.totalRuns == 1 ? ' run' : ' runs')}">0 runs</span>
+            </div>
+
+            <div th:if="${history.runs.isEmpty()}" class="px-6 py-10 text-center text-sm text-gray-600">
+                No builds recorded yet. Run a build to start collecting timings.
+            </div>
+
+            <div th:unless="${history.runs.isEmpty()}" class="divide-y divide-gray-50">
+                <details th:each="run : ${history.runs}" class="group">
+                    <summary class="cursor-pointer px-6 py-4 flex flex-wrap items-center gap-3 hover:bg-gray-50/50 transition-colors">
+                        <span class="text-sm font-semibold text-gray-800" th:text="${run.startedLabel}">2026-01-01 00:00:00</span>
+                        <span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${run.typeLabel}">Build All</span>
+                        <span class="text-xs text-muted" th:text="${run.projectCount + (run.projectCount == 1 ? ' project' : ' projects')}">0 projects</span>
+                        <span class="text-sm font-semibold text-gray-700" th:text="${'Total ' + run.totalLabel}">Total 0 ms</span>
+                        <span class="ml-auto px-2 py-0.5 rounded text-[10px] font-bold border"
+                              th:classappend="${run.success ? 'bg-green-50 text-success border-green-100' : 'bg-red-50 text-danger border-red-100'}"
+                              th:text="${run.success ? 'Success' : 'Failed'}">Success</span>
+                    </summary>
+                    <div class="px-6 pb-4">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr>
+                                    <th class="py-2 text-xs font-bold text-muted uppercase tracking-widest">Project</th>
+                                    <th class="py-2 text-xs font-bold text-muted uppercase tracking-widest text-right">Duration</th>
+                                    <th class="py-2 text-xs font-bold text-muted uppercase tracking-widest text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <tr th:each="p : ${run.projects}">
+                                    <td class="py-2 text-sm font-mono text-gray-700 break-all" th:text="${p.artifactId}">module</td>
+                                    <td class="py-2 text-sm text-gray-600 text-right whitespace-nowrap" th:text="${p.durationLabel}">0 ms</td>
+                                    <td class="py-2 text-xs text-right font-semibold" th:classappend="${p.success ? 'text-success' : 'text-danger'}" th:text="${p.success ? 'OK' : 'Failed'}">OK</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            </div>
+
+            <div th:if="${history.totalPages > 1}" class="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+                <span class="text-xs text-muted" th:text="${'Page ' + (history.page + 1) + ' of ' + history.totalPages}">Page 1 of 1</span>
+                <div class="flex items-center gap-2">
+                    <a th:if="${history.page > 0}"
+                       th:href="@{/workspaces/{id}/build-history(id=${workspace.id}, page=${history.page - 1})}"
+                       class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">Previous</a>
+                    <a th:if="${history.page + 1 < history.totalPages}"
+                       th:href="@{/workspaces/{id}/build-history(id=${workspace.id}, page=${history.page + 1})}"
+                       class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">Next</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-800">Average per project</h2>
+            </div>
+            <div th:if="${history.averages.isEmpty()}" class="px-6 py-10 text-center text-sm text-gray-600">
+                No project timings recorded yet.
+            </div>
+            <div th:unless="${history.averages.isEmpty()}" class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b border-gray-100">
+                        <tr>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Project</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest text-right">Average</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest text-right">Min</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest text-right">Max</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest text-right">Runs</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                        <tr th:each="stat : ${history.averages}">
+                            <td class="px-6 py-4 text-sm font-mono text-gray-700 break-all" th:text="${stat.artifactId}">module</td>
+                            <td class="px-6 py-4 text-sm font-semibold text-gray-800 text-right whitespace-nowrap" th:text="${stat.averageLabel}">0 ms</td>
+                            <td class="px-6 py-4 text-sm text-gray-600 text-right whitespace-nowrap" th:text="${stat.minLabel}">0 ms</td>
+                            <td class="px-6 py-4 text-sm text-gray-600 text-right whitespace-nowrap" th:text="${stat.maxLabel}">0 ms</td>
+                            <td class="px-6 py-4 text-sm text-gray-600 text-right" th:text="${stat.runs}">0</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

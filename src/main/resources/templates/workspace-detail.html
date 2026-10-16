@@ -91,6 +91,7 @@
                     <div class="px-3 py-1 text-xs font-semibold text-muted">Workspace</div>
                     <button aria-label="Workspace settings" onclick="document.getElementById('workspace-actions-menu').open = false; document.getElementById('edit-workspace-modal').classList.remove('hidden')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Workspace settings</button>
                     <a href="/settings" aria-label="Global configuration" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Global configuration</a>
+                    <a th:href="@{/workspaces/{id}/build-history(id=${workspace.id})}" aria-label="Build history" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Build history</a>
                     <a th:href="@{/workspaces/{id}/export(id=${workspace.id})}" aria-label="Export workspace" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export workspace</a>
                     <a th:href="@{/workspaces/{id}/export-order(id=${workspace.id})}" aria-label="Export project order" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export project order</a>
                     <a th:href="@{/workspaces/{id}/export-paths(id=${workspace.id})}" aria-label="Export project paths" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export project paths</a>

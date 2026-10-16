@@ -1,6 +1,8 @@
 package net.olaba.mvnbuilder.service;
 
 import net.olaba.mvnbuilder.entities.MavenProject;
+import net.olaba.mvnbuilder.entities.BuildRunType;
+import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.model.BuildFailure;
 import net.olaba.mvnbuilder.model.LogMessage;
 import net.olaba.mvnbuilder.model.CommandResult;
@@ -29,6 +31,21 @@ public class BuildService {
     private final SimpMessagingTemplate messagingTemplate;
     private final SystemSettingService systemSettingService;
     private final NotificationService notificationService;
+    private final BuildHistoryService buildHistoryService;
+
+    /**
+     * Resolves the workspace shared by the affected projects, if any.
+     *
+     * @param projects the affected projects
+     * @return the workspace or null
+     */
+    private Workspace workspaceOf(final List<MavenProject> projects) {
+        return projects.stream()
+                .filter(project -> project != null && project.getWorkspace() != null)
+                .map(MavenProject::getWorkspace)
+                .findFirst()
+                .orElse(null);
+    }
 
     /**
      * Persists and broadcasts an action summary using the workspace of the
@@ -85,13 +102,21 @@ public class BuildService {
         fullCmd[0] = getMvnCommand();
         System.arraycopy(args, 0, fullCmd, 1, args.length);
         final String javaHome = getJavaHomeForWorkspace(project.getWorkspace());
+        final Workspace workspace = project.getWorkspace();
+        final BuildHistoryService.BuildRunRecorder recorder = buildHistoryService.start(
+                workspace == null ? null : workspace.getId(),
+                workspace == null ? null : workspace.getName(),
+                BuildRunType.PROJECT);
         processExecutionService.executeCommandWithJavaHome(project.getArtifactId(), projectDir, javaHome, fullCmd)
                 .thenAccept(result -> {
+                    final boolean success = result.getExitCode() == 0;
+                    recorder.projectBuilt(project.getArtifactId(), result.getDurationMs(), success);
+                    buildHistoryService.finish(recorder, success);
                     final ActionSummary summary = ActionSummary.builder()
                             .withAction("build")
-                            .withSuccess(result.getExitCode() == 0)
-                            .withFailedProject(result.getExitCode() == 0 ? null : project.getArtifactId())
-                            .withSucceededProjects(result.getExitCode() == 0 ? List.of(project.getArtifactId()) : List.of())
+                            .withSuccess(success)
+                            .withFailedProject(success ? null : project.getArtifactId())
+                            .withSucceededProjects(success ? List.of(project.getArtifactId()) : List.of())
                             .build();
                     publishSummary(summary, List.of(project));
                 });
@@ -103,6 +128,22 @@ public class BuildService {
      * @param projects The list of projects to build.
      */
     public void buildProjectsSequentially(final List<MavenProject> projects) {
+        buildProjectsSequentially(projects, BuildRunType.SELECTION);
+    }
+
+    /**
+     * Builds a list of projects sequentially, skipping disabled ones, and records
+     * a build run of the given type.
+     * 
+     * @param projects The list of projects to build.
+     * @param type     The recorded run type.
+     */
+    public void buildProjectsSequentially(final List<MavenProject> projects, final BuildRunType type) {
+        final Workspace workspace = workspaceOf(projects);
+        final BuildHistoryService.BuildRunRecorder recorder = buildHistoryService.start(
+                workspace == null ? null : workspace.getId(),
+                workspace == null ? null : workspace.getName(),
+                type);
         CompletableFuture<Integer> future = CompletableFuture.completedFuture(0);
         final List<String> succeeded = new java.util.ArrayList<>();
 
@@ -132,6 +173,7 @@ public class BuildService {
                 return processExecutionService.executeCommandWithJavaHome(project.getArtifactId(), projectDir, javaHome, fullCmd)
                         .thenApply(result -> {
                             final int resultExitCode = result.getExitCode();
+                            recorder.projectBuilt(project.getArtifactId(), result.getDurationMs(), resultExitCode == 0);
                             if (resultExitCode != 0) {
                                 // Notify failure and provide remaining projects for retry
                                 final List<Long> remainingIds = projects.subList(currentIndex, projects.size()).stream()
@@ -144,6 +186,8 @@ public class BuildService {
                                         remainingIds),
                                         project.getWorkspace() == null ? null : project.getWorkspace().getId(),
                                         project.getWorkspace() == null ? null : project.getWorkspace().getName());
+
+                                buildHistoryService.finish(recorder, false);
 
                                 // Send ActionSummary with error
                                 final ActionSummary summary = ActionSummary.builder()
@@ -161,8 +205,10 @@ public class BuildService {
             });
         }
 
+
         future.thenAccept(exitCode -> {
             if (exitCode == 0) {
+                buildHistoryService.finish(recorder, true);
                 // All succeeded!
                 final ActionSummary summary = ActionSummary.builder()
                         .withAction("build")
@@ -181,7 +227,7 @@ public class BuildService {
      */
     public void buildWorkspaceSequentially(final Long workspaceId) {
         final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
-        buildProjectsSequentially(projects);
+        buildProjectsSequentially(projects, BuildRunType.FULL);
     }
 
     /**
@@ -193,7 +239,8 @@ public class BuildService {
      */
     public void buildWorkspaceRange(final Long workspaceId, final Long projectId, final BuildRangeMode mode) {
         final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
-        buildProjectsSequentially(selectBuildRange(projects, projectId, mode));
+        final BuildRunType type = mode == BuildRangeMode.ONLY ? BuildRunType.PROJECT : BuildRunType.RANGE;
+        buildProjectsSequentially(selectBuildRange(projects, projectId, mode), type);
     }
 
     /**

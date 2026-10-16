@@ -9,10 +9,17 @@ import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.entities.JavaInstallation;
 import net.olaba.mvnbuilder.entities.SystemSetting;
 import net.olaba.mvnbuilder.entities.Notification;
+import net.olaba.mvnbuilder.entities.BuildRun;
+import net.olaba.mvnbuilder.entities.BuildRunProject;
 import net.olaba.mvnbuilder.model.BuildFailure;
 import net.olaba.mvnbuilder.model.M2ProjectInfo;
 import net.olaba.mvnbuilder.model.ActionSummary;
 import net.olaba.mvnbuilder.model.NotificationDto;
+import net.olaba.mvnbuilder.model.BuildHistoryPage;
+import net.olaba.mvnbuilder.model.BuildRunView;
+import net.olaba.mvnbuilder.model.BuildProjectView;
+import net.olaba.mvnbuilder.model.ProjectBuildStat;
+import net.olaba.mvnbuilder.repository.ProjectBuildStats;
 import net.olaba.mvnbuilder.controller.WorkspaceController;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
@@ -123,6 +130,22 @@ public class NativeRuntimeHints {
                             MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
                             MemberCategory.INVOKE_DECLARED_CONSTRUCTORS));
 
+            hints.reflection().registerType(BuildRun.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.INVOKE_DECLARED_METHODS,
+                            MemberCategory.PUBLIC_FIELDS,
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_DECLARED_CONSTRUCTORS));
+
+            hints.reflection().registerType(BuildRunProject.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.INVOKE_DECLARED_METHODS,
+                            MemberCategory.PUBLIC_FIELDS,
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_DECLARED_CONSTRUCTORS));
+
             // Register DTOs for WebSocket serialization and Thymeleaf access
             hints.reflection().registerType(LogMessage.class,
                     builder -> builder.withMembers(
@@ -158,6 +181,32 @@ public class NativeRuntimeHints {
                             MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
                             MemberCategory.INVOKE_PUBLIC_METHODS,
                             MemberCategory.PUBLIC_FIELDS));
+
+            hints.reflection().registerType(BuildHistoryPage.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.PUBLIC_FIELDS));
+
+            hints.reflection().registerType(BuildRunView.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.PUBLIC_FIELDS));
+
+            hints.reflection().registerType(BuildProjectView.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.PUBLIC_FIELDS));
+
+            hints.reflection().registerType(ProjectBuildStat.class,
+                    builder -> builder.withMembers(
+                            MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                            MemberCategory.INVOKE_PUBLIC_METHODS,
+                            MemberCategory.PUBLIC_FIELDS));
+
+            hints.reflection().registerType(ProjectBuildStats.class, MemberCategory.INVOKE_PUBLIC_METHODS);
 
             hints.reflection().registerType(WorkspaceController.KeyPropertyInfo.class,
                     builder -> builder.withMembers(

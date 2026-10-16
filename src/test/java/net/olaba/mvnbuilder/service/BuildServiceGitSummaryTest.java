@@ -33,6 +33,7 @@ class BuildServiceGitSummaryTest {
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private SystemSettingService systemSettingService;
     @Mock private NotificationService notificationService;
+    @Mock private BuildHistoryService buildHistoryService;
     @InjectMocks private BuildService buildService;
 
     @BeforeEach
