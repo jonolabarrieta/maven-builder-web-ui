@@ -28,6 +28,24 @@ public class BuildService {
     private final BuildProfileRepository buildProfileRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final SystemSettingService systemSettingService;
+    private final NotificationService notificationService;
+
+    /**
+     * Persists and broadcasts an action summary using the workspace of the
+     * affected projects for context.
+     *
+     * @param summary  the action summary
+     * @param projects the affected projects
+     */
+    private void publishSummary(final ActionSummary summary, final List<MavenProject> projects) {
+        final MavenProject context = projects.stream()
+                .filter(project -> project != null && project.getWorkspace() != null)
+                .findFirst()
+                .orElse(null);
+        notificationService.publish(summary,
+                context == null ? null : context.getWorkspace().getId(),
+                context == null ? null : context.getWorkspace().getName());
+    }
 
     /**
      * Retrieves the command arguments from the active build profile.
@@ -75,7 +93,7 @@ public class BuildService {
                             .withFailedProject(result.getExitCode() == 0 ? null : project.getArtifactId())
                             .withSucceededProjects(result.getExitCode() == 0 ? List.of(project.getArtifactId()) : List.of())
                             .build();
-                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                    publishSummary(summary, List.of(project));
                 });
     }
 
@@ -120,10 +138,12 @@ public class BuildService {
                                         .map(MavenProject::getId)
                                         .collect(java.util.stream.Collectors.toList());
 
-                                messagingTemplate.convertAndSend("/topic/build-failure", new BuildFailure(
+                                notificationService.publishBuildFailure(new BuildFailure(
                                         project.getArtifactId(),
                                         project.getId(),
-                                        remainingIds));
+                                        remainingIds),
+                                        project.getWorkspace() == null ? null : project.getWorkspace().getId(),
+                                        project.getWorkspace() == null ? null : project.getWorkspace().getName());
 
                                 // Send ActionSummary with error
                                 final ActionSummary summary = ActionSummary.builder()
@@ -132,7 +152,7 @@ public class BuildService {
                                         .withFailedProject(project.getArtifactId())
                                         .withSucceededProjects(new java.util.ArrayList<>(succeeded))
                                         .build();
-                                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                                publishSummary(summary, projects);
                             } else {
                                 succeeded.add(project.getArtifactId());
                             }
@@ -149,7 +169,7 @@ public class BuildService {
                         .withSuccess(true)
                         .withSucceededProjects(succeeded)
                         .build();
-                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                publishSummary(summary, projects);
             }
         });
     }
@@ -229,7 +249,7 @@ public class BuildService {
                             .withSuccess(result.getExitCode() == 0)
                             .withFailedProjects(result.getExitCode() == 0 ? List.of() : List.of(project.getArtifactId()))
                             .build();
-                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                    publishSummary(summary, List.of(project));
                 });
     }
 
@@ -263,7 +283,7 @@ public class BuildService {
                             .withChangedProjects(changed)
                             .withNoChangesProjects(noChanges)
                             .build();
-                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                    publishSummary(summary, List.of(project));
                 });
     }
 
@@ -295,7 +315,7 @@ public class BuildService {
                         .withSuccess(failed.isEmpty())
                         .withFailedProjects(failed)
                         .build();
-                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                publishSummary(summary, projects);
             });
     }
 
@@ -340,7 +360,7 @@ public class BuildService {
                         .withChangedProjects(changed)
                         .withNoChangesProjects(noChanges)
                         .build();
-                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                publishSummary(summary, projects);
             });
     }
 
@@ -357,7 +377,7 @@ public class BuildService {
                             .withAction("git-discard")
                             .withSuccess(result.getExitCode() == 0)
                             .build();
-                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                    publishSummary(summary, List.of(project));
                 });
     }
 
@@ -374,7 +394,7 @@ public class BuildService {
                             .withAction("git-unstage")
                             .withSuccess(result.getExitCode() == 0)
                             .build();
-                    messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                    publishSummary(summary, List.of(project));
                 });
     }
 
@@ -396,7 +416,7 @@ public class BuildService {
                         .withAction("git-discard")
                         .withSuccess(true)
                         .build();
-                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                publishSummary(summary, projects);
             });
     }
 
@@ -418,7 +438,44 @@ public class BuildService {
                         .withAction("git-unstage")
                         .withSuccess(true)
                         .build();
-                messagingTemplate.convertAndSend("/topic/action-summary", summary);
+                publishSummary(summary, projects);
+            });
+    }
+
+    /**
+     * Performs a bulk 'git stash push' on multiple projects, optionally including
+     * untracked files. Per-project failures are reported in the action summary.
+     * 
+     * @param projects         The list of projects.
+     * @param includeUntracked Whether untracked files should be stashed as well.
+     */
+    public void bulkGitStash(final List<MavenProject> projects, final boolean includeUntracked) {
+        final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
+        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
+        for (final MavenProject project : projects) {
+            if (!project.isEnabled()) continue;
+            final File projectDir = getProjectDir(project);
+            enabledProjects.add(project);
+            if (includeUntracked) {
+                futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "stash", "push", "-u"));
+            } else {
+                futures.add(processExecutionService.executeCommand(project.getArtifactId(), projectDir, "git", "stash", "push"));
+            }
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .thenRun(() -> {
+                final List<String> failed = new java.util.ArrayList<>();
+                for (int i = 0; i < futures.size(); i++) {
+                    if (futures.get(i).join().getExitCode() != 0) {
+                        failed.add(enabledProjects.get(i).getArtifactId());
+                    }
+                }
+                final ActionSummary summary = ActionSummary.builder()
+                        .withAction("git-stash")
+                        .withSuccess(failed.isEmpty())
+                        .withFailedProjects(failed)
+                        .build();
+                publishSummary(summary, projects);
             });
     }
 
