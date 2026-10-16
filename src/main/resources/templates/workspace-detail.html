@@ -174,6 +174,14 @@
                                 <span class="text-[10px] font-bold uppercase tracking-widest">Kill</span>
                             </button>
                         </div>
+                        <button type="button" id="log-follow-toggle" onclick="toggleLogFollow()" aria-pressed="false" title="Keep the active tab on the project currently building" class="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-gray-600 text-console-muted hover:text-white hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span class="text-[10px] font-bold uppercase tracking-widest">Follow build</span>
+                            <span id="log-follow-indicator" class="text-[10px] font-bold uppercase tracking-widest">Off</span>
+                        </button>
                         <button aria-label="Clear All Logs" onclick="clearLogs()" class="icon-button text-console-muted hover:text-gray-300 transition-colors p-1 hover:bg-gray-700 rounded" title="Clear All Logs">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -709,6 +717,8 @@
 
         let activeTab = 'Global';
         let actionSummarySequence = 0;
+        let followBuild = false;
+        const LOG_FOLLOW_STORAGE_KEY = 'mvnbuilder.buildLogFollow';
         const projectTabs = { 'Global': true };
         const logLines = { 'Global': [] };
 
@@ -1120,6 +1130,48 @@
             }
         }
 
+        /** Reads the persisted follow-build preference, defaulting to off. */
+        function readFollowPreference() {
+            try {
+                return window.localStorage.getItem(LOG_FOLLOW_STORAGE_KEY) === 'true';
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /** Persists the follow-build preference. */
+        function persistFollowPreference(value) {
+            try {
+                window.localStorage.setItem(LOG_FOLLOW_STORAGE_KEY, value ? 'true' : 'false');
+            } catch (error) {
+                // Ignore: fall back to the in-memory value for this session.
+            }
+        }
+
+        /** Reflects the follow-build state on the header toggle. */
+        function applyFollowIndicator() {
+            const toggle = document.getElementById('log-follow-toggle');
+            if (!toggle) return;
+            toggle.setAttribute('aria-pressed', followBuild ? 'true' : 'false');
+            toggle.classList.toggle('text-indigo-300', followBuild);
+            toggle.classList.toggle('border-indigo-500', followBuild);
+            toggle.classList.toggle('text-console-muted', !followBuild);
+            const indicator = document.getElementById('log-follow-indicator');
+            if (indicator) indicator.textContent = followBuild ? 'On' : 'Off';
+        }
+
+        /** Sets the follow-build state without persisting it. */
+        function setLogFollow(value) {
+            followBuild = value === true;
+            applyFollowIndicator();
+        }
+
+        /** Toggles follow-build mode and remembers the choice. */
+        function toggleLogFollow() {
+            setLogFollow(!followBuild);
+            persistFollowPreference(followBuild);
+        }
+
         function appendLog(label, content) {
             const normalizedLabel = label || 'Global';
             const normalizedContent = content == null ? '' : String(content);
@@ -1135,6 +1187,11 @@
                 }
                 logLines[label].push(normalizedContent);
                 appendLineToContainer(label, null, normalizedContent);
+
+                // Follow the project currently producing output when enabled.
+                if (followBuild && activeTab !== label) {
+                    switchTab(label);
+                }
             }
         }
 
@@ -1161,6 +1218,16 @@
             const tabGroup = document.createElement('div');
             tabGroup.className = 'project-log-tab flex items-center shrink-0';
             tabGroup.append(button, closeButton);
+            // Middle-click (wheel button) closes the tab and suppresses browser autoscroll.
+            tabGroup.addEventListener('auxclick', event => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                closeTab(label, event);
+            });
+            tabGroup.addEventListener('mousedown', event => {
+                if (event.button === 1) event.preventDefault();
+            });
             tabContainer.appendChild(tabGroup);
 
             const containers = document.getElementById('log-containers');
@@ -1577,6 +1644,10 @@
         document.addEventListener('DOMContentLoaded', function() {
             reconcileProjectSelection();
             requestGitStatus(false);
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setLogFollow(readFollowPreference());
         });
 
         document.addEventListener('keydown', function(event) {
