@@ -26,6 +26,17 @@ MvnBuilder is a robust administrative dashboard designed to manage complex Maven
 - **Bulk Actions**: Perform Git Fetch, Pull, or Maven Build on multiple selected projects simultaneously.
 - **Drag & Drop Reordering**: Manually override the build order using an intuitive interactive list.
 
+### 📱 Responsive Design
+MvnBuilder adapts to desktop, tablet, and mobile screens.
+
+| Desktop | Tablet |
+| --- | --- |
+| ![Desktop layout](img/adapt-desktop.jpg) | ![Tablet layout](img/adapt-tablet.jpg) |
+
+| Mobile explorer | Mobile view |
+| --- | --- |
+| ![Mobile explorer](img/adapt-mobile-explorer.jpg) | ![Mobile view](img/mobile-view.jpg) |
+
 ---
 
 ## 🤖 Built with AI
