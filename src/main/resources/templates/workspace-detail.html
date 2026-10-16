@@ -1,24 +1,23 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="stylesheet" href="/css/app.css">
     <title th:text="${workspace.name + ' - MvnBuilder'}">Workspace Detail</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="/vendor/htmx.org/1.9.10/htmx.min.js" defer></script>
     <script src="/js/global-spinner.js" defer></script>
     <script src="/js/confirmation-modal.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <link rel="stylesheet" href="/css/responsive.css">
+    <script src="/js/app-dialogs.js" defer></script>
+    <script src="/vendor/sockjs-client/1.6.1/sockjs.min.js" defer></script>
+    <script src="/vendor/stompjs/2.3.3/stomp.min.js" defer></script>
+    <script src="/vendor/sortablejs/1.15.6/Sortable.min.js" defer></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
         .glass { background: rgba(255, 255, 255, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
         .console { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.4; }
-        .badge { @apply px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         #log-containers > div::-webkit-scrollbar { width: 6px; }
@@ -29,12 +28,15 @@
         #log-tabs::-webkit-scrollbar-track { background: transparent; }
         #log-tabs::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
         #log-tabs::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+        #project-table-body td { vertical-align: top; }
+        #build-output { height: 220px; min-height: 150px; resize: vertical; }
+        @media (max-width: 767px) { #build-output { height: 150px; } }
     </style>
 </head>
 <body class="text-gray-900">
     <nav id="workspace-nav" class="glass sticky top-0 z-50 px-4 sm:px-6 py-3 sm:py-4 flex flex-col xl:flex-row xl:items-center gap-3 shadow-sm">
         <div class="flex items-center space-x-3 min-w-0">
-            <a href="/" class="text-gray-400 hover:text-gray-600 transition-colors">
+            <a href="/" aria-label="Back to workspaces" class="icon-button text-muted hover:text-gray-600 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
@@ -42,84 +44,61 @@
             <div class="flex items-center space-x-2 border-l pl-3 min-w-0">
                 <div class="flex items-baseline space-x-1.5 min-w-0">
                     <span class="text-base sm:text-xl font-bold tracking-tight text-gray-800 truncate" th:text="${workspace.name}" th:attr="data-workspace-name=${workspace.name}">Workspace Name</span>
-                    <span class="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-md font-mono" th:text="${currentVersion != null ? 'v' + currentVersion : 'v1.1.0'}">v1.1.0</span>
+                    <span class="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md font-mono" th:text="${currentVersion != null ? 'v' + currentVersion : 'v1.1.0'}">v1.1.0</span>
                 </div>
             </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
-            <a href="/settings" class="text-gray-500 hover:text-indigo-600 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all font-medium flex items-center space-x-1.5 text-sm border border-gray-200 bg-white">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                </svg>
-                <span>Configuration</span>
-            </a>
-            <button onclick="document.getElementById('edit-workspace-modal').classList.remove('hidden')" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-50 transition-all font-medium flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Settings
-            </button>
+        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 xl:ml-auto">
             <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id})}"
-                    hx-target="#explorer-modal-content"
-                    hx-trigger="click"
+                    hx-target="#explorer-modal-content" hx-trigger="click"
                     onclick="document.getElementById('explorer-modal').classList.remove('hidden')"
-                    class="bg-white text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-50 transition-all font-medium flex items-center shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    class="bg-white text-indigo-600 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 transition-colors font-medium flex items-center gap-2 text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                 </svg>
                 Add Project
             </button>
-            <form id="workspace-refresh-form" th:action="@{/workspaces/{id}/refresh(id=${workspace.id})}"
-                  th:hx-post="@{/workspaces/{id}/refresh(id=${workspace.id})}" hx-target="#project-table-body"
-                  hx-swap="outerHTML" method="POST" data-no-spinner="true">
-                <button id="workspace-refresh-button" type="submit" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" title="Refresh projects from disk">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Refresh
-                </button>
-            </form>
-            <form th:action="@{/workspaces/{id}/calculate-order(id=${workspace.id})}" method="POST">
-                <button type="submit" class="bg-indigo-50 text-indigo-600 border border-indigo-100 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-all font-medium flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Auto-Order
-                </button>
-            </form>
-            <a th:href="@{/workspaces/{id}/export-order(id=${workspace.id})}" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Export projects names in order">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Export Order
-            </a>
-            <a th:href="@{/workspaces/{id}/export-paths(id=${workspace.id})}" class="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center shadow-sm" title="Export only project paths in order">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export Paths
-            </a>
-            <a th:href="@{/workspaces/{id}/export(id=${workspace.id})}" class="bg-indigo-50 text-indigo-600 border border-indigo-100 px-4 py-2 rounded-lg hover:bg-indigo-100 transition-all font-medium flex items-center shadow-sm" title="Export full workspace including project paths">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export Workspace
-            </a>
-            
-            <div class="hidden xl:block h-6 w-px bg-gray-200 mx-2"></div>
-            
             <div hx-get="/settings/profiles/selector" hx-trigger="load" hx-swap="outerHTML">
-                <div class="animate-pulse bg-gray-200 h-10 w-48 rounded-lg"></div>
+                <div class="animate-pulse bg-gray-200 h-10 w-40 rounded-lg"></div>
             </div>
-
-            <button th:attr="hx-post=@{/workspaces/{id}/build-all(id=${workspace.id})}" hx-swap="none" onclick="clearLogs()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-medium flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button th:attr="hx-post=@{/workspaces/{id}/build-all(id=${workspace.id})}" hx-swap="none" onclick="clearLogs()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Build All
             </button>
+            <button type="button" id="notification-bell" onclick="toggleNotificationPanel()" aria-label="Notification history" title="Notifications" class="relative bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 font-medium text-sm flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span class="hidden sm:inline">Notifications</span>
+                <span id="notification-badge" style="display:none;position:absolute;top:-0.4rem;right:-0.4rem;min-width:1.15rem;height:1.15rem;padding:0 0.25rem;border-radius:9999px;background:#dc2626;color:#fff;font-size:0.65rem;font-weight:700;line-height:1.15rem;text-align:center;">0</span>
+            </button>
+            <details class="relative" id="workspace-actions-menu">
+                <summary class="list-none cursor-pointer bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 font-medium text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">More actions</summary>
+                <div class="absolute right-0 z-[70] mt-2 w-56 max-h-[70dvh] overflow-y-auto rounded-xl bg-white border border-gray-200 shadow-lg p-1 text-sm text-gray-700">
+                    <div class="px-3 py-1 text-xs font-semibold text-muted">Projects</div>
+                    <form id="workspace-refresh-form" th:action="@{/workspaces/{id}/refresh(id=${workspace.id})}"
+                          th:hx-post="@{/workspaces/{id}/refresh(id=${workspace.id})}" hx-target="#project-table-body"
+                          hx-swap="outerHTML" method="POST" data-no-spinner="true">
+                        <button id="workspace-refresh-button" type="submit" aria-label="Refresh projects from disk" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50">Refresh from disk</button>
+                    </form>
+                    <form th:action="@{/workspaces/{id}/calculate-order(id=${workspace.id})}" method="POST">
+                        <button type="submit" aria-label="Auto-order projects by dependencies" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Auto-order by dependencies</button>
+                    </form>
+                    <div class="border-t border-gray-100 my-1"></div>
+                    <div class="px-3 py-1 text-xs font-semibold text-muted">Workspace</div>
+                    <button aria-label="Workspace settings" onclick="document.getElementById('workspace-actions-menu').open = false; document.getElementById('edit-workspace-modal').classList.remove('hidden')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50">Workspace settings</button>
+                    <a href="/settings" aria-label="Global configuration" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Global configuration</a>
+                    <a th:href="@{/workspaces/{id}/build-history(id=${workspace.id})}" aria-label="Build history" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Build history</a>
+                    <a th:href="@{/workspaces/{id}/export(id=${workspace.id})}" aria-label="Export workspace" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export workspace</a>
+                    <a th:href="@{/workspaces/{id}/export-order(id=${workspace.id})}" aria-label="Export project order" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export project order</a>
+                    <a th:href="@{/workspaces/{id}/export-paths(id=${workspace.id})}" aria-label="Export project paths" class="block px-3 py-2 rounded-lg hover:bg-gray-50">Export project paths</a>
+                    <div class="border-t border-gray-100 mt-1 px-3 py-2 text-xs text-muted break-all" th:text="${workspace.basePath ?: 'No base path set'}">/path/to/workspace</div>
+                    <button type="button" onclick="closeActionMenu(this)" class="adapt-menu-close w-full text-left px-3 py-2 rounded-lg bg-gray-100 font-semibold">Close menu</button>
+                </div>
+            </details>
         </div>
     </nav>
     
@@ -128,18 +107,18 @@
         <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg shadow-sm">
             <div class="flex items-center">
                 <div class="flex-shrink-0">
-                    <svg class="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <svg class="h-5 w-5 text-danger" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
                     </svg>
                 </div>
                 <div class="ml-3">
-                    <p class="text-sm text-red-700 font-medium" th:text="${errorMessage}">
+                    <p class="text-sm text-danger font-medium" th:text="${errorMessage}">
                         Error message goes here.
                     </p>
                 </div>
                 <div class="ml-auto pl-3">
                     <div class="-mx-1.5 -my-1.5">
-                        <button type="button" onclick="this.parentElement.parentElement.parentElement.parentElement.parentElement.remove()" class="inline-flex bg-red-50 rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600">
+                        <button type="button" onclick="this.parentElement.parentElement.parentElement.parentElement.parentElement.remove()" class="inline-flex bg-red-50 rounded-md p-1.5 text-danger hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600">
                             <span class="sr-only">Dismiss</span>
                             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -152,94 +131,42 @@
     </div>
 
     <main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-6">
-        <!-- Bulk Action Toolbar -->
-        <div id="bulk-action-toolbar" style="top: var(--workspace-nav-height, 0px)" class="sticky z-40 bg-white rounded-2xl shadow-sm border border-gray-100 p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div class="flex flex-wrap items-center gap-2 sm:gap-4">
-                <!-- Destructive Git Actions (left, always visible) -->
-                <div class="flex flex-wrap items-center gap-2 sm:border-r sm:pr-4">
-                    <button onclick="executeBulkAction('restore-staged')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm" title="Unstage all staged changes in selected projects">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                        </svg>
-                        <span>Unstage</span>
-                    </button>
-                    <button onclick="executeBulkAction('checkout-discard')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-all shadow-sm" title="Discard all local unstaged changes in selected projects">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        <span>Discard Changes</span>
-                    </button>
-                </div>
-                <!-- Select All -->
-                <div class="flex items-center gap-2 sm:border-r sm:pr-4">
-                    <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                    <label for="select-all" class="text-xs font-bold text-gray-400 uppercase tracking-widest cursor-pointer">Select All</label>
-                </div>
-                <div id="bulk-actions" class="flex flex-wrap items-center gap-2 sm:border-r sm:pr-4">
-                    <button onclick="executeBulkAction('fetch')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                        </svg>
-                        <span>Fetch</span>
-                    </button>
-                    <button onclick="executeBulkAction('pull')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                        </svg>
-                        <span>Pull</span>
-                    </button>
-                    <button onclick="openBulkBranchModal()" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Checkout branch for selected projects">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                        </svg>
-                        <span>Branch</span>
-                    </button>
-                    <button onclick="executeBulkAction('build')" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>Build</span>
-                    </button>
-                </div>
-                <div class="flex items-center space-x-2">
-                </div>
+        <!-- Bulk actions appear only after a project is selected. -->
+        <div id="bulk-action-toolbar" class="sticky z-40 bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="select-all" onclick="toggleAllCheckboxes(this)" aria-label="Select all projects" th:disabled="${projects.isEmpty()}" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50">
+                <label for="select-all" class="text-sm font-medium text-gray-700 cursor-pointer">Select all</label>
             </div>
-            <div class="text-xs font-medium text-gray-400">
-                <span id="selected-count">0</span> projects selected
+            <span id="selected-status" class="text-sm text-muted" role="status" aria-live="polite" th:text="${projects.isEmpty() ? 'Add a project to use bulk actions' : 'Select projects to use bulk actions'}">Select projects to use bulk actions</span>
+            <div id="bulk-actions" class="hidden flex flex-wrap items-center gap-2 lg:ml-auto">
+                <button onclick="executeBulkAction('fetch')" class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">Fetch</button>
+                <button onclick="executeBulkAction('pull')" class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">Pull</button>
+                <button onclick="openBulkBranchModal()" class="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">Branch</button>
+                <button onclick="executeBulkAction('build')" class="px-3 py-1.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">Build selected</button>
+                <details class="relative" id="bulk-more-menu">
+                    <summary class="list-none cursor-pointer px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">Git changes</summary>
+                    <div class="absolute right-0 z-50 mt-2 w-52 rounded-xl bg-white border border-gray-200 shadow-lg p-1 text-sm">
+                        <button onclick="document.getElementById('bulk-more-menu').open = false; executeBulkAction('restore-staged')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700">Unstage selected</button>
+                        <button onclick="document.getElementById('bulk-more-menu').open = false; executeBulkAction('stash')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700">Stash selected</button>
+                        <button onclick="document.getElementById('bulk-more-menu').open = false; executeBulkAction('checkout-discard')" class="w-full text-left px-3 py-2 rounded-lg hover:bg-red-50 text-danger">Discard changes</button>
+                        <button type="button" onclick="closeActionMenu(this)" class="adapt-menu-close w-full text-left px-3 py-2 rounded-lg bg-gray-100 font-semibold">Close menu</button>
+                    </div>
+                </details>
             </div>
         </div>
 
-        <!-- Workspace Info (Top) -->
-        <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4">
-            <div class="flex flex-wrap items-center gap-4 sm:gap-6 min-w-0">
-                <div class="min-w-0">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Base Path</div>
-                    <div class="text-sm text-gray-600 font-mono break-all" th:text="${workspace.basePath ?: 'No path defined'}">/path/to/workspace</div>
-                </div>
-                <div class="border-l pl-6">
-                    <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Projects</div>
-                    <div class="text-sm font-bold text-indigo-600" th:text="${projects.size()}">0</div>
-                </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-2 sm:gap-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                <span class="flex items-center"><span class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></span> Drag projects to reorder</span>
-                <span class="flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-2"></span> Auto-order uses dependencies</span>
-            </div>
-        </div>
-
-        <!-- Log Area (Top, Full Width) -->
-        <div class="bg-gray-900 rounded-2xl shadow-xl overflow-hidden flex flex-col" style="height: 400px; resize: vertical; min-height: 150px;">
+        <!-- Build output stays close to Build All without dominating the project list. -->
+        <div id="build-output" class="bg-gray-900 rounded-2xl shadow-xl overflow-hidden flex flex-col">
             <!-- Log Header / Tabs -->
             <div class="bg-gray-800 border-b border-gray-700 flex flex-col shrink-0">
                 <div class="px-4 py-2 flex justify-between items-center border-b border-gray-700/50">
                     <div class="flex items-center space-x-2">
                         <div class="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
-                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Build Output</span>
+                        <span class="text-[10px] font-bold text-console-muted uppercase tracking-widest">Build Output</span>
                     </div>
-                    <div class="flex items-center space-x-4">
+                    <div class="flex items-center gap-1 sm:gap-3">
                         <div id="process-info" class="hidden flex items-center space-x-3 bg-gray-700/50 px-3 py-1 rounded-full border border-gray-600">
-                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">PID: <span id="current-pid" class="text-indigo-400">0</span></span>
+                            <span class="text-[10px] font-bold text-console-muted uppercase tracking-widest">PID: <span id="current-pid" class="text-indigo-400">0</span></span>
                             <button hx-post="/build/kill" hx-swap="none" class="text-red-400 hover:text-red-300 transition-colors flex items-center space-x-1 group/kill">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -247,12 +174,20 @@
                                 <span class="text-[10px] font-bold uppercase tracking-widest">Kill</span>
                             </button>
                         </div>
-                        <button onclick="clearLogs()" class="text-gray-500 hover:text-gray-300 transition-colors p-1 hover:bg-gray-700 rounded" title="Clear All Logs">
+                        <button type="button" id="log-follow-toggle" onclick="toggleLogFollow()" aria-pressed="false" title="Keep the active tab on the project currently building" class="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-gray-600 text-console-muted hover:text-white hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span class="text-[10px] font-bold uppercase tracking-widest">Follow build</span>
+                            <span id="log-follow-indicator" class="text-[10px] font-bold uppercase tracking-widest">Off</span>
+                        </button>
+                        <button aria-label="Clear All Logs" onclick="clearLogs()" class="icon-button text-console-muted hover:text-gray-300 transition-colors p-1 hover:bg-gray-700 rounded" title="Clear All Logs">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                         </button>
-                        <button onclick="downloadBuildLogs()" class="text-gray-400 hover:text-white transition-colors p-1 hover:bg-gray-700 rounded" title="Download current build log">
+                        <button aria-label="Download all build logs" onclick="downloadBuildLogs()" class="icon-button text-console-muted hover:text-white transition-colors p-1 hover:bg-gray-700 rounded" title="Download all build logs">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v12m0 0l-4-4m4 4l4-4m2 6v1a3 3 0 01-3 3H9a3 3 0 01-3-3v-1" />
                             </svg>
@@ -260,7 +195,7 @@
                     </div>
                 </div>
                 <div id="log-tabs" class="flex items-center px-2 overflow-x-auto bg-gray-800/50 border-b border-gray-700/30">
-                    <button onclick="switchTab('Global')" id="tab-Global" class="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-indigo-500 text-white flex items-center space-x-2 shrink-0">
+                    <button onclick="switchTab('Global')" id="tab-Global" aria-pressed="true" class="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-indigo-500 text-white flex items-center space-x-2 shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                         </svg>
@@ -272,11 +207,11 @@
             <!-- Log Content Containers -->
             <div id="log-containers" class="flex-grow relative bg-gray-950 overflow-hidden">
                 <div id="log-container-Global" class="absolute inset-0 p-4 overflow-y-auto console text-gray-300 space-y-1 block">
-                    <div class="text-gray-500 italic opacity-50 flex items-center">
+                    <div class="text-console-muted italic flex items-center">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3" />
                         </svg>
-                        Waiting for process logs...
+                        Run a build or Git action to see its output here.
                     </div>
                 </div>
             </div>
@@ -306,39 +241,17 @@
             </div>
         </div>
 
-        <!-- M2 Favorites Panel (Top, Always Visible) -->
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 sm:p-6 space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-100 pb-4">
-                <h3 class="text-lg font-bold text-gray-800 flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    M2 Global Favorites
-                </h3>
-                <form hx-post="/settings/m2-favorites/add" hx-target="#m2-favorites-content" class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                    <select name="groupId" required class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white w-full sm:w-auto sm:min-w-[200px]">
-                        <option value="" disabled selected>Select folder from M2...</option>
-                        <option th:each="g : ${availableGroupIds}" th:value="${g}" th:text="${g}"></option>
-                    </select>
-                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all text-sm font-semibold shadow-sm">
-                        Add Favorite
-                    </button>
-                </form>
-            </div>
-            <div id="m2-favorites-content" hx-get="/settings/m2-favorites" hx-trigger="load">
-                <div class="flex justify-center p-4">
-                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
-                </div>
-            </div>
-        </div>
-
         <div class="w-full">
+            <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <h2 class="text-lg font-semibold text-gray-800">Projects <span class="text-sm font-normal text-muted" th:text="${'(' + projects.size() + ')'}">(1)</span></h2>
+                <span th:if="${projects.size() > 1}" class="text-xs text-muted">Reorder projects</span>
+                <span id="project-order-status" class="sr-only" role="status" aria-live="polite"></span>
+            </div>
             <!-- Projects Table -->
 
             <div id="workspace-git-status" th:data-url="@{/workspaces/{id}/git-status-table(id=${workspace.id})}"
-                 class="mb-3 text-xs text-gray-500" role="status" aria-live="polite">Using cached Git branches.</div>
-            <div id="workspace-refresh-status" class="mb-3 text-xs text-gray-500" role="status" aria-live="polite"></div>
+                 class="mb-3 text-xs text-muted" role="status" aria-live="polite">Using cached Git references.</div>
+            <div id="workspace-refresh-status" class="mb-3 text-xs text-muted" role="status" aria-live="polite"></div>
             <div id="workspace-refresh-overlay" class="fixed inset-0 z-[90] hidden flex items-center justify-center bg-slate-900/30 backdrop-blur-[2px]"
                  role="status" aria-live="polite" aria-hidden="true">
                 <div class="flex items-center gap-3 rounded-xl bg-white px-6 py-4 shadow-xl border border-gray-100">
@@ -352,53 +265,68 @@
                     <thead class="bg-gray-50 border-b border-gray-100">
                         <tr>
                             <th class="px-6 py-4 w-10"></th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest w-16">Status</th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest w-16">Order</th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Project</th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Git Status</th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Modules</th>
-                            <th class="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest w-16">Status</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest w-16">Order</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Project</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Git Status</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest">Modules</th>
+                            <th class="px-6 py-4 text-xs font-bold text-muted uppercase tracking-widest text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="project-table-body" 
                            th:fragment="project-table-body" 
                            class="divide-y divide-gray-50">
+                        <tr th:if="${projects.isEmpty()}">
+                            <td colspan="7" class="px-6 py-10 text-center text-sm text-gray-600">No projects yet. Add a project to start building.</td>
+                        </tr>
                         <tr th:each="project : ${projects}" 
-                            class="hover:bg-gray-50/50 transition-all duration-300 group cursor-move" 
-                            th:classappend="${!project.enabled ? 'opacity-40 grayscale' : ''}"
+                            class="hover:bg-gray-50/50 transition-all duration-300 group"
+                            th:classappend="${!project.enabled ? 'project-skipped' : ''}"
                             th:attr="data-id=${project.id}"
                             th:id="'project-row-' + ${project.id}">
                             <td class="px-6 py-4">
-                                <input type="checkbox" name="project-checkbox" th:value="${project.id}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                <label class="project-selection"><input type="checkbox" name="project-checkbox" th:value="${project.id}" th:aria-label="'Select project ' + ${project.artifactId}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
                             </td>
                             <td class="px-6 py-4">
                                 <button th:attr="hx-post=@{/projects/{id}/toggle-enabled(id=${project.id})}"
                                         hx-swap="none"
                                         th:onclick="'toggleProjectRow(' + ${project.id} + ', this)'"
                                         class="transition-all p-2 rounded-xl border"
-                                        th:classappend="${project.enabled ? 'bg-green-50 text-green-600 border-green-100 hover:bg-green-100' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-100'}"
+                                        th:classappend="${project.enabled ? 'bg-green-50 text-success border-green-100 hover:bg-green-100' : 'bg-gray-50 text-muted border-gray-100 hover:bg-gray-100'}"
+                                        th:aria-pressed="${project.enabled}"
                                         th:title="${project.enabled ? 'Disable Project' : 'Enable Project'}">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.828a5 5 0 117.07 0m-4.242-4.242V4" />
                                     </svg>
                                 </button>
                             </td>
-                            <td class="px-6 py-4 flex items-center space-x-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300 hover:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <td class="px-6 py-4 flex items-center gap-1">
+                                <button type="button" class="project-order-handle icon-button cursor-grab text-muted hover:bg-gray-100" th:aria-label="${'Reorder ' + project.artifactId + ': use Arrow Up or Arrow Down'}" onkeydown="reorderProjectByKey(event, this)">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                                 </svg>
-                                <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-gray-500" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
+                                </button>
+                                <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-muted" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
+                                <div class="project-order-buttons">
+                                    <button type="button" onclick="moveProject(this, -1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.artifactId + ' up'}" data-move="-1">
+                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                                    </button>
+                                    <button type="button" onclick="moveProject(this, 1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.artifactId + ' down'}" data-move="1">
+                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 9l7 7 7-7" /></svg>
+                                    </button>
+                                </div>
                             </td>
                             <td class="px-6 py-4">
-                                <div class="flex items-center space-x-2">
+                                <div class="flex flex-wrap items-center gap-2">
                                     <div class="font-bold text-gray-800" th:text="${project.artifactId}">artifact-id</div>
+                                    <span class="project-state whitespace-nowrap text-xs font-medium text-muted" th:classappend="${project.enabled ? 'hidden' : ''}">Skipped</span>
                                     <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${project.version}">1.0.0</span>
                                 </div>
-                                <div class="text-xs text-gray-400 font-mono" th:text="${project.groupId}">group.id</div>
+                                <div class="text-xs text-muted font-mono" th:text="${project.groupId}">group.id</div>
                                 <div class="mt-1 flex items-center space-x-1.5">
                                     <button onclick="copyToClipboard(this)" 
                                             th:attr="data-path=${project.absolutePath}" 
-                                            class="text-[10px] text-gray-500 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded px-2 py-0.5 font-mono flex items-center space-x-1 transition-all shadow-sm" 
+                                            class="text-[10px] text-muted bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded px-2 py-0.5 font-mono flex items-center space-x-1 transition-all shadow-sm"
                                             title="Click to copy absolute path">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m-5 4h6m-6 4h6m-6 4h3" />
@@ -413,7 +341,7 @@
                                         hx-trigger="click"
                                         onclick="document.getElementById('branch-modal').classList.remove('hidden')"
                                         class="flex items-center space-x-2 hover:bg-gray-100 px-2 py-1 rounded-lg transition-all group/branch">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/branch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted group-hover/branch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                     </svg>
                                     <span class="text-sm font-medium text-gray-600" th:id="'git-branch-' + ${project.id}" th:text="${project.gitBranch}">main</span>
@@ -429,68 +357,26 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                                     </svg>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider">View Recursive</span>
+                                    <span class="text-[10px] font-bold uppercase tracking-wider">View submodules</span>
                                 </button>
-                                <span th:unless="${projectIdsWithChildren.contains(project.id)}" class="text-gray-300 text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
+                                <span th:unless="${projectIdsWithChildren.contains(project.id)}" class="text-muted text-[10px] font-bold uppercase tracking-widest pl-2">No submodules</span>
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex flex-wrap justify-end items-center gap-1">
-                                        <button th:attr="hx-post=@{/projects/{id}/open-vscode(id=${project.id})}" 
-                                                hx-swap="none" 
-                                                class="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" 
-                                                title="Open in VSCode">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                                            </svg>
-                                        </button>
-                                        <button th:attr="hx-post=@{/projects/{id}/open-explorer(id=${project.id})}" 
-                                                hx-swap="none" 
-                                                class="p-2 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all" 
-                                                title="Open in File Explorer">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                                            </svg>
-                                        </button>
-                                        <button th:attr="hx-post=@{/projects/{id}/open-terminal(id=${project.id})}"
-                                                hx-swap="none"
-                                                class="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
-                                                title="Open Terminal">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
-                                            </svg>
-                                        </button>
-                                        <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
-                                                hx-target="#project-properties-modal-content"
-                                                hx-trigger="click"
-                                                onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
-                                                class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Project Properties">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
-                                        </button>
-                                        <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
-                                                hx-target="#m2-modal-content"
-                                                hx-trigger="click"
-                                                onclick="document.getElementById('m2-modal').classList.remove('hidden')"
-                                                class="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Local M2 Repository">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                            </svg>
-                                        </button>
                                         <button th:attr="hx-post=@{/projects/{id}/fetch(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/fetch" title="Git Fetch">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/fetch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted group-hover/fetch:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                                             </svg>
                                             <span>Fetch</span>
                                         </button>
                                         <button th:attr="hx-post=@{/projects/{id}/pull(id=${project.id})}" hx-swap="none" class="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm group/pull" title="Git Pull">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400 group-hover/pull:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted group-hover/pull:text-indigo-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                             </svg>
                                             <span>Pull</span>
                                         </button>
                                         <details class="relative group/build">
-                                            <summary class="list-none cursor-pointer flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-600 rounded-lg hover:bg-green-700 transition-all shadow-md" title="Choose Maven build range">
+                                            <summary class="list-none cursor-pointer flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-700 rounded-lg hover:bg-green-800 transition-all shadow-md" title="Choose Maven build range">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -498,23 +384,104 @@
                                                 <span>Build</span>
                                             </summary>
                                             <div class="absolute right-0 z-30 mt-1 w-44 rounded-lg bg-white border border-gray-200 shadow-xl overflow-hidden">
-                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='ONLY')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Only this module</button>
+                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='ONLY')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Only this project</button>
                                                 <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='FROM')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Build from here</button>
-                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='THROUGH')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Build through here</button>
+                                                <button th:attr="hx-post=@{/workspaces/{workspaceId}/projects/{projectId}/build-range(workspaceId=${workspace.id}, projectId=${project.id}, mode='THROUGH')}" hx-swap="none" onclick="startRangeBuild(this)" class="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50">Build up to here</button>
                                             </div>
                                         </details>
-                                        <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
-                                                hx-confirm="Are you sure you want to remove this project and all its submodules?"
-                                                class="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
+                                        <details class="w-full text-right" aria-label="More project tools">
+                                            <summary class="list-none cursor-pointer inline-flex items-center px-3 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">More tools</summary>
+                                            <div class="mt-2 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-2">
+                                                <button th:attr="hx-post=@{/projects/{id}/open-vscode(id=${project.id})}"
+                                                        hx-swap="none"
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                                        title="Open in VSCode">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                                                    </svg>
+                                                        <span>Open in VS Code</span>
+                                                </button>
+                                                <button th:attr="hx-post=@{/projects/{id}/open-explorer(id=${project.id})}"
+                                                        hx-swap="none"
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-600 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-all"
+                                                        title="Open in File Explorer">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                                    </svg>
+                                                        <span>Open folder</span>
+                                                </button>
+                                                <button th:attr="hx-post=@{/projects/{id}/open-terminal(id=${project.id})}"
+                                                        hx-swap="none"
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-600 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-all"
+                                                        title="Open Terminal">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                                                    </svg>
+                                                        <span>Open terminal</span>
+                                                </button>
+                                                <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
+                                                        hx-target="#project-properties-modal-content"
+                                                        hx-trigger="click"
+                                                        onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Project Properties">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                        <span>Project properties</span>
+                                                </button>
+                                                <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
+                                                        hx-target="#m2-modal-content"
+                                                        hx-trigger="click"
+                                                        onclick="document.getElementById('m2-modal').classList.remove('hidden')"
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title="Local M2 Repository">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                                    </svg>
+                                                        <span>Local M2 repository</span>
+                                                </button>
+                                                <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
+                                                        hx-confirm="Remove this project and its submodules from the workspace? They will be excluded from future scans. Files on disk will be kept."
+                                                        class="flex items-center gap-2 px-2 py-1.5 text-sm text-danger hover:text-red-800 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    <span>Remove project</span>
+                                                </button>
+                                            </div>
+                                        </details>
+
                                 </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Optional M2 tools follow the primary project workflow. -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden p-4 sm:p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-100 pb-4">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    M2 Global Favorites
+                </h3>
+                <form hx-post="/settings/m2-favorites/add" hx-target="#m2-favorites-content" class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                    <select name="groupId" aria-label="M2 folder to add to favorites" required class="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none bg-white w-full sm:w-auto sm:min-w-[200px]">
+                        <option value="" disabled selected>Select folder from M2...</option>
+                        <option th:each="g : ${availableGroupIds}" th:value="${g}" th:text="${g}"></option>
+                    </select>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-all text-sm font-semibold shadow-sm">
+                        Add Favorite
+                    </button>
+                </form>
+            </div>
+            <div id="m2-favorites-content" hx-get="/settings/m2-favorites" hx-trigger="load">
+                <div class="flex justify-center p-4">
+                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                </div>
             </div>
         </div>
 
@@ -525,7 +492,7 @@
         <div class="bg-white rounded-2xl w-full max-w-md shadow-2xl transform transition-all">
             <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center">
                 <h3 class="text-2xl font-bold text-gray-800">Workspace Settings</h3>
-                <button onclick="document.getElementById('edit-workspace-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                <button type="button" aria-label="Close Workspace Settings" onclick="document.getElementById('edit-workspace-modal').classList.add('hidden')" class="icon-button text-muted hover:text-gray-600">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -534,11 +501,11 @@
             <div class="p-8 space-y-8">
                 <form th:action="@{/workspaces/{id}/edit(id=${workspace.id})}" method="POST" class="space-y-6">
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Workspace Name</label>
-                        <input type="text" name="name" th:value="${workspace.name}" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
+                        <label for="edit-workspace-name" class="block text-sm font-semibold text-gray-700 mb-2">Workspace Name</label>
+                        <input type="text" id="edit-workspace-name" name="name" th:value="${workspace.name}" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Base Directory Path</label>
+                        <label for="edit-workspace-base-path" class="block text-sm font-semibold text-gray-700 mb-2">Base folder</label>
                         <div class="flex gap-2">
                             <input type="text" name="basePath" id="edit-workspace-base-path" th:value="${workspace.basePath}" class="flex-grow px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all">
                             <button type="button"
@@ -549,7 +516,7 @@
                                 Browse
                             </button>
                         </div>
-                        <p class="mt-2 text-xs text-amber-600 font-medium flex items-center">
+                        <p class="mt-2 text-xs text-warning font-medium flex items-center">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
@@ -557,9 +524,9 @@
                         </p>
                     </div>
                     <div>
-                        <label class="block text-sm font-semibold text-gray-700 mb-2">Java Version (optional)</label>
-                        <select name="javaInstallationId" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm">
-                            <option value="0">— Use system default —</option>
+                        <label for="edit-workspace-java" class="block text-sm font-semibold text-gray-700 mb-2">Java installation (optional)</label>
+                        <select id="edit-workspace-java" name="javaInstallationId" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm">
+                            <option value="0">Use global Java default</option>
                             <option th:each="ji : ${javaInstallations}"
                                     th:value="${ji.id}"
                                     th:text="${ji.name} + ' (' + ${ji.javaHome} + ')'"
@@ -567,7 +534,7 @@
                                 JDK 17
                             </option>
                         </select>
-                        <p class="mt-1.5 text-xs text-gray-400">Overrides the global active Java version for this workspace's builds.</p>
+                        <p class="mt-1.5 text-xs text-muted">Choose a JDK for this workspace, or use the active installation in Configuration. If none is active, builds use the Java environment running MvnBuilder.</p>
                     </div>
                     <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-indigo-200 shadow-lg">
                         Save Changes
@@ -581,18 +548,19 @@
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
                             </svg>
-                            Clone Workspace
+                            Duplicate Workspace
                         </button>
                     </form>
                 </div>
 
                 <div class="pt-6 border-t border-gray-100">
-                    <h4 class="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">Danger Zone</h4>
+                    <h4 class="text-sm font-bold text-danger uppercase tracking-wider mb-4">Danger Zone</h4>
                     <form th:action="@{/workspaces/{id}/delete(id=${workspace.id})}" method="POST"
                           th:id="'delete-workspace-form-' + ${workspace.id}">
                         <button type="button"
-                                th:attr="onclick='confirmDeleteWorkspaceDetail(' + ${workspace.id} + ', \'' + ${#strings.escapeJava(workspace.name)} + '\');'"
-                                class="w-full bg-red-50 text-red-600 hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
+                                th:attr="data-workspace-id=${workspace.id},data-workspace-name=${workspace.name}"
+                                onclick="confirmDeleteWorkspaceDetail(this.dataset.workspaceId, this.dataset.workspaceName)"
+                                class="w-full bg-red-50 text-danger hover:bg-red-100 font-bold py-3 rounded-xl transition-all border border-red-100">
                             Delete Workspace
                         </button>
                     </form>
@@ -619,9 +587,9 @@
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <div>
                     <h3 class="text-lg font-bold text-gray-800">Bulk Branch Checkout</h3>
-                    <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Change branch for selected repositories</p>
+                    <p class="text-[10px] font-bold text-muted uppercase tracking-widest">Change branch for selected repositories</p>
                 </div>
-                <button onclick="document.getElementById('bulk-branch-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
+                <button type="button" aria-label="Close Change Selected Branches" onclick="document.getElementById('bulk-branch-modal').classList.add('hidden')" class="icon-button text-muted hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -631,12 +599,12 @@
                 <!-- Loading spinner inside modal -->
                 <div id="bulk-branch-loading" class="hidden py-12 text-center">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                    <p class="text-sm font-medium text-gray-500">Executing branch checkout...</p>
+                    <p class="text-sm font-medium text-muted">Executing branch checkout...</p>
                 </div>
                 <div id="bulk-branch-form-container" class="space-y-6">
                     <div class="space-y-4">
                         <div>
-                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Branch Name</label>
+                             <label for="bulk-branch-name" class="text-[10px] font-bold text-muted uppercase tracking-widest block mb-2">Branch Name</label>
                              <input type="text" id="bulk-branch-name" required placeholder="main or feature/branch" 
                                     class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-sm">
                         </div>
@@ -718,39 +686,71 @@
     </div>
 
     <!-- Action Summary Toast Container -->
-    <div id="action-summary-container" class="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-auto sm:right-6 z-[80] flex flex-col space-y-4 max-w-md"></div>
+    <div id="action-summary-container" aria-live="polite" aria-relevant="additions" class="fixed bottom-4 left-4 right-4 sm:bottom-6 sm:left-auto sm:right-6 z-[80] flex flex-col space-y-4 max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto"></div>
+
+    <!-- Notification History Panel -->
+    <div id="notification-panel" class="hidden" role="dialog" aria-modal="true" aria-labelledby="notification-panel-title" aria-hidden="true">
+        <div id="notification-panel-backdrop" onclick="closeNotificationPanel()" style="position:fixed;inset:0;z-index:96;background:rgba(15,23,42,0.4);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);"></div>
+        <aside style="position:fixed;top:0;right:0;z-index:97;height:100%;width:100%;max-width:26rem;background:#fff;box-shadow:0 25px 50px rgba(15,23,42,0.28);display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9;">
+                <h2 id="notification-panel-title" style="margin:0;font-size:1rem;font-weight:700;color:#1e293b;">Notifications</h2>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <button type="button" onclick="clearNotifications()" aria-label="Clear all notifications" style="font-size:0.75rem;font-weight:600;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:0.5rem;padding:0.35rem 0.6rem;cursor:pointer;">Clear all</button>
+                    <button type="button" id="notification-close" onclick="closeNotificationPanel()" aria-label="Close notifications" class="icon-button text-muted hover:text-gray-600 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div style="flex:1;overflow-y:auto;">
+                <div id="notification-list" style="padding:0.75rem;display:flex;flex-direction:column;gap:0.5rem;"></div>
+                <p id="notification-empty" style="display:none;padding:2.5rem 1rem;text-align:center;font-size:0.875rem;color:#64748b;">No notifications yet.</p>
+            </div>
+        </aside>
+    </div>
 
     <script th:inline="javascript">
         const workspaceId = [[${workspace.id}]];
-        let socket = new SockJS('/ws-logs');
-        let stompClient = Stomp.over(socket);
-        stompClient.debug = null;
+        let socket;
+        let stompClient;
 
         let activeTab = 'Global';
+        let actionSummarySequence = 0;
+        let followBuild = false;
+        const LOG_FOLLOW_STORAGE_KEY = 'mvnbuilder.buildLogFollow';
         const projectTabs = { 'Global': true };
         const logLines = { 'Global': [] };
 
-        stompClient.connect({}, function (frame) {
-            stompClient.subscribe('/topic/logs', function (message) {
-                const log = JSON.parse(message.body);
-                appendLog(log.label, log.content);
-            });
+        // Deferred vendor scripts are ready before DOMContentLoaded.
+        document.addEventListener('DOMContentLoaded', () => {
+            socket = new SockJS('/ws-logs');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+            stompClient.connect({}, function (frame) {
+                stompClient.subscribe('/topic/logs', function (message) {
+                    const log = JSON.parse(message.body);
+                    appendLog(log.label, log.content);
+                });
 
-            stompClient.subscribe('/topic/process', function (message) {
-                const info = JSON.parse(message.body);
-                updateProcessInfo(info.pid, info.active);
-            });
+                stompClient.subscribe('/topic/process', function (message) {
+                    const info = JSON.parse(message.body);
+                    updateProcessInfo(info.pid, info.active);
+                });
 
-            stompClient.subscribe('/topic/build-failure', function (message) {
-                const failure = JSON.parse(message.body);
-                showRetryButton(failure);
-            });
+                stompClient.subscribe('/topic/build-failure', function (message) {
+                    const failure = JSON.parse(message.body);
+                    showRetryButton(failure);
+                    handleLiveNotification();
+                });
 
-            stompClient.subscribe('/topic/action-summary', function (message) {
-                const summary = JSON.parse(message.body);
-                showActionSummary(summary);
+                stompClient.subscribe('/topic/action-summary', function (message) {
+                    const summary = JSON.parse(message.body);
+                    showActionSummary(summary);
+                    handleLiveNotification();
+                });
             });
-        });
+        }, { once: true });
 
         function showRetryButton(failure) {
             const retryContainer = document.getElementById('retry-container');
@@ -770,7 +770,7 @@
             const container = document.getElementById('action-summary-container');
             if (!container) return;
 
-            const toastId = 'toast-' + Date.now();
+            const toastId = 'toast-' + Date.now() + '-' + ++actionSummarySequence;
             const toast = document.createElement('div');
             toast.id = toastId;
             toast.className = 'glass relative bg-white/95 border border-gray-100 rounded-2xl shadow-2xl p-5 flex flex-col space-y-3 max-h-[calc(100dvh-2rem)] overflow-y-auto transition-all duration-500 ease-out transform translate-x-full opacity-0';
@@ -780,12 +780,13 @@
                 'git-fetch': 'Git Fetch',
                 'git-pull': 'Git Pull',
                 'git-discard': 'Git Discard',
-                'git-unstage': 'Git Unstage'
+                'git-unstage': 'Git Unstage',
+                'git-stash': 'Git Stash'
             }[summary.action] || 'Git Action';
-            const actionTitle = isBuild ? 'Build Workspace' : `${gitActionTitle} Workspace`;
-            const statusText = summary.success ? 'Success' : 'Failed';
+            const actionTitle = isBuild ? 'Build result' : `${gitActionTitle} result`;
+            const statusText = summary.success ? (isBuild ? 'Success' : 'Finished') : 'Failed';
             
-            const iconBg = summary.success ? 'bg-green-50 text-green-600 border border-green-100' : 'bg-red-50 text-red-600 border border-red-100';
+            const iconBg = summary.success ? 'bg-green-50 text-success border border-green-100' : 'bg-red-50 text-danger border border-red-100';
             const iconSvg = summary.success 
                 ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
                 : `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
@@ -793,38 +794,38 @@
             let contentHtml = '';
             if (isBuild) {
                 if (summary.success) {
-                    contentHtml = `<p class="text-sm text-gray-600">All builds completed successfully!</p>`;
+                    contentHtml = `<p class="text-sm text-gray-600">Build completed.</p>`;
                     if (summary.succeededProjects && summary.succeededProjects.length > 0) {
                         contentHtml += `
                             <div class="space-y-1">
-                                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Succeeded Projects (${summary.succeededProjects.length})</div>
+                                <div class="text-[10px] font-bold text-muted uppercase tracking-widest">Succeeded Projects (${summary.succeededProjects.length})</div>
                                 <div class="flex flex-wrap gap-1">
-                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-success border border-green-100 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
                                 </div>
                             </div>
                         `;
                     }
                 } else {
-                    contentHtml = `<p class="text-sm text-gray-600">Build failed at project <span class="font-bold text-red-600 underline">${summary.failedProject}</span>.</p>`;
+                    contentHtml = `<p class="text-sm text-gray-600">Build stopped at <span class="font-bold text-danger underline break-all">${escapeHtml(summary.failedProject)}</span>. Check its log before retrying.</p>`;
                     if (summary.succeededProjects && summary.succeededProjects.length > 0) {
                         contentHtml += `
                             <div class="space-y-1">
-                                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Succeeded Before Failure (${summary.succeededProjects.length})</div>
+                                <div class="text-[10px] font-bold text-muted uppercase tracking-widest">Succeeded Before Failure (${summary.succeededProjects.length})</div>
                                 <div class="flex flex-wrap gap-1">
-                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                    ${summary.succeededProjects.map(p => `<span class="px-2 py-0.5 bg-green-50 text-success border border-green-100 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
                                 </div>
                             </div>
                         `;
                     }
                 }
             } else {
-                contentHtml = `<p class="text-sm text-gray-600">${gitActionTitle} ${summary.success ? 'completed.' : 'finished with errors.'}</p>`;
+                contentHtml = `<p class="text-sm text-gray-600">${gitActionTitle} ${summary.success ? 'finished. Review the output for details.' : 'finished with errors. Check the output before retrying.'}</p>`;
                 if (summary.failedProjects && summary.failedProjects.length > 0) {
                     contentHtml += `
                         <div class="space-y-1">
-                            <div class="text-[10px] font-bold text-red-600 uppercase tracking-widest">Failed repositories (${summary.failedProjects.length})</div>
+                            <div class="text-[10px] font-bold text-danger uppercase tracking-widest">Failed repositories (${summary.failedProjects.length})</div>
                             <div class="flex flex-wrap gap-1">
-                                ${summary.failedProjects.map(p => `<span class="px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
+                                ${summary.failedProjects.map(p => `<span class="px-2 py-0.5 bg-red-50 text-danger border border-red-200 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
                             </div>
                         </div>
                     `;
@@ -834,7 +835,7 @@
                         <div class="space-y-1">
                             <div class="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center"><span class="w-1.5 h-1.5 bg-indigo-500 rounded-full mr-1.5"></span>Updated (${summary.changedProjects.length})</div>
                             <div class="flex flex-wrap gap-1">
-                                ${summary.changedProjects.map(p => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                ${summary.changedProjects.map(p => `<span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
                             </div>
                         </div>
                     `;
@@ -842,9 +843,9 @@
                 if (summary.noChangesProjects && summary.noChangesProjects.length > 0) {
                     contentHtml += `
                         <div class="space-y-1">
-                            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center"><span class="w-1.5 h-1.5 bg-gray-300 rounded-full mr-1.5"></span>Already Up to Date (${summary.noChangesProjects.length})</div>
+                            <div class="text-[10px] font-bold text-muted uppercase tracking-widest flex items-center"><span class="w-1.5 h-1.5 bg-gray-300 rounded-full mr-1.5"></span>Already Up to Date (${summary.noChangesProjects.length})</div>
                             <div class="flex flex-wrap gap-1">
-                                ${summary.noChangesProjects.map(p => `<span class="px-2 py-0.5 bg-gray-50 text-gray-600 border border-gray-200 rounded text-[10px] font-mono font-medium">${p}</span>`).join('')}
+                                ${summary.noChangesProjects.map(p => `<span class="px-2 py-0.5 bg-gray-50 text-gray-600 border border-gray-200 rounded text-[10px] font-mono font-medium break-all">${escapeHtml(p)}</span>`).join('')}
                             </div>
                         </div>
                     `;
@@ -852,18 +853,18 @@
             }
 
             toast.innerHTML = `
-                <button onclick="closeToast('${toastId}')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors">
+                <button type="button" aria-label="Dismiss action summary" onclick="closeToast('${toastId}')" class="icon-button absolute top-2 right-2 text-muted hover:text-gray-600 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
-                <div class="flex items-center space-x-3">
-                    <div class="p-2 rounded-xl ${iconBg}">
+                <div class="flex items-center space-x-3 pr-8">
+                    <div class="p-2 rounded-xl shrink-0 ${iconBg}">
                         ${iconSvg}
                     </div>
                     <div>
                         <h4 class="text-sm font-bold text-gray-800">${actionTitle}</h4>
-                        <p class="text-[10px] font-extrabold uppercase tracking-widest ${summary.success ? 'text-green-600' : 'text-red-600'}">${statusText}</p>
+                        <p class="text-[10px] font-extrabold uppercase tracking-widest ${summary.success ? 'text-success' : 'text-danger'}">${statusText}</p>
                     </div>
                 </div>
                 <div class="space-y-3 pt-1">
@@ -879,6 +880,227 @@
             });
 
 
+        }
+
+        let notificationPanelOpen = false;
+
+        /** Toggles the notification history panel. */
+        function toggleNotificationPanel() {
+            if (notificationPanelOpen) {
+                closeNotificationPanel();
+            } else {
+                openNotificationPanel();
+            }
+        }
+
+        /** Opens the notification history panel, loads history, and marks it read. */
+        function openNotificationPanel() {
+            const panel = document.getElementById('notification-panel');
+            if (!panel) return;
+            notificationPanelOpen = true;
+            panel.classList.remove('hidden');
+            panel.setAttribute('aria-hidden', 'false');
+            loadNotificationHistory();
+            markNotificationsRead();
+            const close = document.getElementById('notification-close');
+            if (close) close.focus();
+        }
+
+        /** Closes the notification history panel. */
+        function closeNotificationPanel() {
+            const panel = document.getElementById('notification-panel');
+            if (!panel || !notificationPanelOpen) return;
+            notificationPanelOpen = false;
+            panel.classList.add('hidden');
+            panel.setAttribute('aria-hidden', 'true');
+            const bell = document.getElementById('notification-bell');
+            if (bell) bell.focus();
+        }
+
+        /** Renders the unread badge, hiding it when the count is zero. */
+        function updateNotificationBadge(count) {
+            const badge = document.getElementById('notification-badge');
+            if (!badge) return;
+            const value = Number(count) || 0;
+            if (value > 0) {
+                badge.textContent = value > 99 ? '99+' : String(value);
+                badge.style.display = 'inline-block';
+            } else {
+                badge.textContent = '0';
+                badge.style.display = 'none';
+            }
+        }
+
+        /** Refreshes the unread badge from the server (feature-detected by the bell). */
+        function loadNotificationCount() {
+            if (!document.getElementById('notification-bell')) return Promise.resolve();
+            return fetch('/notifications/unread-count')
+                .then(response => (response.ok ? response.json() : null))
+                .then(data => { if (data) updateNotificationBadge(data.count); })
+                .catch(() => {});
+        }
+
+        /** Loads and renders the stored notification history. */
+        function loadNotificationHistory() {
+            const list = document.getElementById('notification-list');
+            if (!list) return Promise.resolve();
+            return fetch('/notifications')
+                .then(response => {
+                    if (!response.ok) throw new Error('failed');
+                    return response.json();
+                })
+                .then(items => renderNotificationHistory(Array.isArray(items) ? items : []))
+                .catch(() => {
+                    list.textContent = '';
+                    showNotificationEmpty('Notifications could not be loaded.');
+                });
+        }
+
+        /** Renders the given notifications newest first, showing the empty state when none exist. */
+        function renderNotificationHistory(items) {
+            const list = document.getElementById('notification-list');
+            if (!list) return;
+            list.textContent = '';
+            if (!items.length) {
+                showNotificationEmpty('No notifications yet.');
+                return;
+            }
+            hideNotificationEmpty();
+            items.forEach(item => list.appendChild(buildNotificationItem(item)));
+        }
+
+        /** Builds one history entry. All external text is assigned via textContent. */
+        function buildNotificationItem(item) {
+            const success = item.success === true;
+            const card = document.createElement('div');
+            card.style.cssText = 'background:#fff;border:1px solid #f1f5f9;border-radius:0.75rem;padding:0.75rem;box-shadow:0 1px 2px rgba(0,0,0,0.04);';
+
+            const head = document.createElement('div');
+            head.style.cssText = 'display:flex;align-items:center;gap:0.5rem;';
+            const dot = document.createElement('span');
+            dot.style.cssText = 'width:0.5rem;height:0.5rem;border-radius:9999px;flex:0 0 auto;background:' + (success ? '#16a34a' : '#dc2626') + ';';
+            head.appendChild(dot);
+            const title = document.createElement('span');
+            title.style.cssText = 'font-size:0.85rem;font-weight:700;color:#1e293b;';
+            title.textContent = item.title || 'Notification';
+            head.appendChild(title);
+            const time = document.createElement('span');
+            time.style.cssText = 'margin-left:auto;font-size:0.7rem;color:#64748b;white-space:nowrap;';
+            time.textContent = formatNotificationTime(item.createdAt);
+            head.appendChild(time);
+            card.appendChild(head);
+
+            if (item.message) {
+                const message = document.createElement('p');
+                message.style.cssText = 'margin:0.4rem 0 0;font-size:0.8rem;color:#475569;line-height:1.5;overflow-wrap:anywhere;';
+                message.textContent = item.message;
+                card.appendChild(message);
+            }
+
+            appendNotificationChips(card, 'Failed', item.failedProjects, '#fef2f2', '#b91c1c', '#fecaca');
+            appendNotificationChips(card, 'Succeeded', item.succeededProjects, '#f0fdf4', '#166534', '#bbf7d0');
+            appendNotificationChips(card, 'Updated', item.changedProjects, '#eef2ff', '#4338ca', '#c7d2fe');
+            appendNotificationChips(card, 'Up to date', item.noChangesProjects, '#f9fafb', '#4b5563', '#e5e7eb');
+            return card;
+        }
+
+        /** Appends a labelled group of project-ID chips when values are present. */
+        function appendNotificationChips(card, label, values, background, color, border) {
+            if (!Array.isArray(values) || values.length === 0) return;
+            const group = document.createElement('div');
+            group.style.cssText = 'margin-top:0.4rem;';
+            const caption = document.createElement('div');
+            caption.style.cssText = 'font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:0.2rem;';
+            caption.textContent = label + ' (' + values.length + ')';
+            group.appendChild(caption);
+            const chips = document.createElement('div');
+            chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.25rem;';
+            values.forEach(value => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'font-family:"JetBrains Mono",monospace;font-size:0.65rem;font-weight:500;padding:0.1rem 0.35rem;border-radius:0.25rem;overflow-wrap:anywhere;background:' + background + ';color:' + color + ';border:1px solid ' + border + ';';
+                chip.textContent = value;
+                chips.appendChild(chip);
+            });
+            group.appendChild(chips);
+            card.appendChild(group);
+        }
+
+        /** Formats an ISO timestamp as a compact relative age. */
+        function formatNotificationTime(value) {
+            if (!value) return '';
+            const then = new Date(value);
+            if (isNaN(then.getTime())) return '';
+            const seconds = Math.max(0, Math.floor((Date.now() - then.getTime()) / 1000));
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + 'm ago';
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return hours + 'h ago';
+            return then.toLocaleString();
+        }
+
+        /** Shows the list empty/error state. */
+        function showNotificationEmpty(text) {
+            const empty = document.getElementById('notification-empty');
+            if (!empty) return;
+            empty.textContent = text;
+            empty.style.display = 'block';
+        }
+
+        /** Hides the list empty/error state. */
+        function hideNotificationEmpty() {
+            const empty = document.getElementById('notification-empty');
+            if (empty) empty.style.display = 'none';
+        }
+
+        /** Marks all notifications read and clears the badge. */
+        function markNotificationsRead() {
+            updateNotificationBadge(0);
+            return fetch('/notifications/read', { method: 'POST' }).catch(() => {});
+        }
+
+        /** Clears the stored history and shows the empty state. */
+        function clearNotifications() {
+            return fetch('/notifications', { method: 'DELETE' })
+                .then(response => {
+                    if (!response.ok) throw new Error('failed');
+                })
+                .then(() => {
+                    const list = document.getElementById('notification-list');
+                    if (list) list.textContent = '';
+                    showNotificationEmpty('No notifications yet.');
+                    updateNotificationBadge(0);
+                })
+                .catch(() => showLocalActionMessage('Notifications could not be cleared.', true));
+        }
+
+        /** Updates the panel or badge when a notification arrives live. */
+        function handleLiveNotification() {
+            if (!document.getElementById('notification-bell')) return;
+            if (notificationPanelOpen) {
+                loadNotificationHistory();
+            } else {
+                loadNotificationCount();
+            }
+        }
+
+        /** Best-effort persistence of a client-side local message; never blocks the toast. */
+        function recordLocalNotification(message, isError) {
+            if (!document.getElementById('notification-bell')) return;
+            try {
+                fetch('/notifications/local', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        severity: isError ? 'error' : 'success',
+                        title: isError ? 'Action failed' : 'Action completed',
+                        message: message,
+                        workspaceId: typeof workspaceId !== 'undefined' ? workspaceId : null
+                    })
+                }).then(() => handleLiveNotification()).catch(() => {});
+            } catch (error) {
+                // Ignore: the on-screen message is already shown.
+            }
         }
 
         function closeToast(toastId) {
@@ -908,6 +1130,48 @@
             }
         }
 
+        /** Reads the persisted follow-build preference, defaulting to off. */
+        function readFollowPreference() {
+            try {
+                return window.localStorage.getItem(LOG_FOLLOW_STORAGE_KEY) === 'true';
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /** Persists the follow-build preference. */
+        function persistFollowPreference(value) {
+            try {
+                window.localStorage.setItem(LOG_FOLLOW_STORAGE_KEY, value ? 'true' : 'false');
+            } catch (error) {
+                // Ignore: fall back to the in-memory value for this session.
+            }
+        }
+
+        /** Reflects the follow-build state on the header toggle. */
+        function applyFollowIndicator() {
+            const toggle = document.getElementById('log-follow-toggle');
+            if (!toggle) return;
+            toggle.setAttribute('aria-pressed', followBuild ? 'true' : 'false');
+            toggle.classList.toggle('text-indigo-300', followBuild);
+            toggle.classList.toggle('border-indigo-500', followBuild);
+            toggle.classList.toggle('text-console-muted', !followBuild);
+            const indicator = document.getElementById('log-follow-indicator');
+            if (indicator) indicator.textContent = followBuild ? 'On' : 'Off';
+        }
+
+        /** Sets the follow-build state without persisting it. */
+        function setLogFollow(value) {
+            followBuild = value === true;
+            applyFollowIndicator();
+        }
+
+        /** Toggles follow-build mode and remembers the choice. */
+        function toggleLogFollow() {
+            setLogFollow(!followBuild);
+            persistFollowPreference(followBuild);
+        }
+
         function appendLog(label, content) {
             const normalizedLabel = label || 'Global';
             const normalizedContent = content == null ? '' : String(content);
@@ -923,6 +1187,11 @@
                 }
                 logLines[label].push(normalizedContent);
                 appendLineToContainer(label, null, normalizedContent);
+
+                // Follow the project currently producing output when enabled.
+                if (followBuild && activeTab !== label) {
+                    switchTab(label);
+                }
             }
         }
 
@@ -934,17 +1203,32 @@
             const button = document.createElement('button');
             button.id = `tab-${label}`;
             button.onclick = () => switchTab(label);
-            button.className = 'px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-transparent text-gray-500 hover:text-gray-300 flex items-center space-x-2 shrink-0 group/tab';
+            button.setAttribute('aria-pressed', 'false');
+            button.className = 'px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 border-transparent text-console-muted hover:text-gray-300 flex items-center space-x-2 shrink-0';
             button.innerHTML = `
                 <span class="w-1.5 h-1.5 bg-indigo-500/50 rounded-full"></span>
-                <span>${label}</span>
-                <span onclick="closeTab('${label}', event)" class="ml-1 opacity-0 group-hover/tab:opacity-100 hover:bg-white/10 rounded-full p-0.5 transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </span>
+                <span>${escapeHtml(label)}</span>
             `;
-            tabContainer.appendChild(button);
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.setAttribute('aria-label', `Close log for ${label}`);
+            closeButton.className = 'icon-button text-console-muted hover:text-white hover:bg-white/10 mr-1';
+            closeButton.onclick = event => closeTab(label, event);
+            closeButton.innerHTML = '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>';
+            const tabGroup = document.createElement('div');
+            tabGroup.className = 'project-log-tab flex items-center shrink-0';
+            tabGroup.append(button, closeButton);
+            // Middle-click (wheel button) closes the tab and suppresses browser autoscroll.
+            tabGroup.addEventListener('auxclick', event => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                closeTab(label, event);
+            });
+            tabGroup.addEventListener('mousedown', event => {
+                if (event.button === 1) event.preventDefault();
+            });
+            tabContainer.appendChild(tabGroup);
 
             const containers = document.getElementById('log-containers');
             const div = document.createElement('div');
@@ -964,8 +1248,9 @@
             const currentTab = document.getElementById(`tab-${activeTab}`);
             if (currentContainer) currentContainer.classList.add('hidden');
             if (currentTab) {
+                currentTab.setAttribute('aria-pressed', 'false');
                 currentTab.classList.remove('border-indigo-500', 'text-white');
-                currentTab.classList.add('border-transparent', 'text-gray-500');
+                currentTab.classList.add('border-transparent', 'text-console-muted');
             }
 
             // Show new
@@ -974,8 +1259,9 @@
             const nextTab = document.getElementById(`tab-${label}`);
             if (nextContainer) nextContainer.classList.remove('hidden');
             if (nextTab) {
+                nextTab.setAttribute('aria-pressed', 'true');
                 nextTab.classList.add('border-indigo-500', 'text-white');
-                nextTab.classList.remove('border-transparent', 'text-gray-500');
+                nextTab.classList.remove('border-transparent', 'text-console-muted');
             }
 
             // Scroll to bottom of the new tab
@@ -989,8 +1275,10 @@
             
             const tab = document.getElementById(`tab-${label}`);
             const container = document.getElementById(`log-container-${label}`);
-            
-            if (tab) tab.remove();
+            const tabGroup = tab?.closest('.project-log-tab');
+            const restoreFocus = tabGroup?.contains(document.activeElement);
+            if (tabGroup) tabGroup.remove();
+            else if (tab) tab.remove();
             if (container) container.remove();
             
             delete projectTabs[label];
@@ -999,6 +1287,7 @@
             if (activeTab === label) {
                 switchTab('Global');
             }
+            if (restoreFocus) document.getElementById(`tab-${activeTab}`)?.focus();
         }
 
         function appendLineToContainer(containerId, label, content) {
@@ -1011,7 +1300,7 @@
             
             const div = document.createElement('div');
             div.className = 'hover:bg-white/5 transition-colors px-1 rounded';
-            const labelSpan = label ? `<span class="text-indigo-400/80 font-bold mr-2 text-[10px] tracking-tighter">[${label}]</span>` : '';
+            const labelSpan = label ? `<span class="text-indigo-300 font-bold mr-2 text-[10px] tracking-tighter">[${escapeHtml(label)}]</span>` : '';
             div.innerHTML = labelSpan + `<span class="break-words">${escapeHtml(content)}</span>`;
             container.appendChild(div);
             
@@ -1026,26 +1315,16 @@
             // Reset Global container
             const globalContainer = document.getElementById('log-container-Global');
             globalContainer.innerHTML = `
-                <div class="text-gray-500 italic opacity-50 flex items-center">
+                <div class="text-console-muted italic flex items-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3" />
                     </svg>
-                    Waiting for process logs...
+                    Run a build or Git action to see its output here.
                 </div>`;
 
             // Remove all other tabs and containers
-            const tabContainer = document.getElementById('log-tabs');
-            const logContainers = document.getElementById('log-containers');
-            
             Object.keys(projectTabs).forEach(label => {
-                if (label !== 'Global') {
-                    const tab = document.getElementById(`tab-${label}`);
-                    const container = document.getElementById(`log-container-${label}`);
-                    if (tab) tab.remove();
-                    if (container) container.remove();
-                    delete projectTabs[label];
-                    delete logLines[label];
-                }
+                if (label !== 'Global') closeTab(label);
             });
 
             switchTab('Global');
@@ -1079,12 +1358,14 @@
 
         function showLocalActionMessage(message, isError) {
             const container = document.getElementById('action-summary-container');
-            if (!container) return;
-            const toast = document.createElement('div');
-            toast.className = `glass bg-white/95 border rounded-2xl shadow-2xl p-4 text-sm ${isError ? 'border-red-200 text-red-700' : 'border-green-200 text-green-700'}`;
-            toast.textContent = message;
-            container.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
+            if (container) {
+                const toast = document.createElement('div');
+                toast.className = `glass bg-white/95 border rounded-2xl shadow-2xl p-4 text-sm ${isError ? 'border-red-200 text-danger' : 'border-green-200 text-success'}`;
+                toast.textContent = message;
+                container.appendChild(toast);
+                setTimeout(() => toast.remove(), 5000);
+            }
+            recordLocalNotification(message, isError);
         }
 
         function copyToClipboard(btn) {
@@ -1095,11 +1376,11 @@
                 const originalText = textSpan.innerText;
                 textSpan.innerText = 'Copied!';
                 btn.classList.add('bg-green-100', 'text-green-800', 'border-green-300');
-                btn.classList.remove('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                btn.classList.remove('bg-gray-100', 'text-muted', 'border-gray-200');
                 setTimeout(() => {
                     textSpan.innerText = originalText;
                     btn.classList.remove('bg-green-100', 'text-green-800', 'border-green-300');
-                    btn.classList.add('bg-gray-100', 'text-gray-500', 'border-gray-200');
+                    btn.classList.add('bg-gray-100', 'text-muted', 'border-gray-200');
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy text: ', err);
@@ -1117,7 +1398,7 @@
             } catch (error) {
                 console.error('Unable to read error response:', error);
             }
-            throw new Error(responseMessage || fallbackMessage);
+            throw new Error(responseMessage && !['<', '{', '['].includes(responseMessage[0]) ? responseMessage : fallbackMessage);
         }
 
         function showRequestError(title, error, fallbackMessage) {
@@ -1129,15 +1410,15 @@
 
         function confirmUnstage(projectId, projectName) {
             ConfirmationModal.confirm({
-                title: 'Unstage cambios',
-                message: `Se eliminarán todos los ficheros del staging area del proyecto "${projectName}".\n\nEsta acción es reversible: los cambios seguirán en el working tree.`,
-                confirmLabel: 'Unstage',
+                title: 'Unstage changes?',
+                message: `Unstage all staged changes in "${projectName}"? Your changes stay in the working tree and can be staged again.`,
+                confirmLabel: 'Unstage changes',
                 danger: false,
                 onConfirm: () => {
                     fetch(`/projects/${projectId}/git/unstage`, { method: 'POST' })
-                        .then(response => requireSuccessfulResponse(response, 'No se pudieron retirar los cambios del staging area.'))
-                        .catch(error => showRequestError('Error al hacer unstage', error,
-                            'No se pudieron retirar los cambios del staging area.'));
+                        .then(response => requireSuccessfulResponse(response, 'Changes could not be unstaged. Check the project log and try again.'))
+                        .catch(error => showRequestError('Unable to unstage changes', error,
+                            'Changes could not be unstaged. Check the project log and try again.'));
                 }
             });
         }
@@ -1145,28 +1426,28 @@
         function confirmDiscard(projectId, projectName) {
             const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
             ConfirmationModal.confirm({
-                title: '¿Descartar cambios?',
-                message: `Se descartarán todos los cambios no staged del proyecto "${projectName}".\n\nEsta acción no se puede deshacer.`,
-                confirmLabel: 'Descartar',
+                title: 'Discard unstaged changes?',
+                message: `Discard unstaged changes to tracked files in "${projectName}"? Staged changes and untracked files are kept. This cannot be undone.`,
+                confirmLabel: 'Discard changes',
                 requireTyped: workspaceName,
-                requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                requireTypedLabel: 'Type the workspace name to confirm:',
                 danger: true,
                 onConfirm: () => {
                     fetch(`/projects/${projectId}/git/discard`, { method: 'POST' })
-                        .then(response => requireSuccessfulResponse(response, 'No se pudieron descartar los cambios.'))
-                        .catch(error => showRequestError('Error al descartar cambios', error,
-                            'No se pudieron descartar los cambios.'));
+                        .then(response => requireSuccessfulResponse(response, 'Changes could not be discarded. Check the project log and try again.'))
+                        .catch(error => showRequestError('Unable to discard changes', error,
+                            'Changes could not be discarded. Check the project log and try again.'));
                 }
             });
         }
 
         function confirmDeleteWorkspaceDetail(workspaceId, workspaceName) {
             ConfirmationModal.confirm({
-                title: '¿Eliminar workspace?',
-                message: `Esta acción no se puede deshacer. Se eliminará el workspace "${workspaceName}" y toda su configuración.`,
-                confirmLabel: 'Eliminar',
+                title: 'Delete workspace?',
+                message: `Delete "${workspaceName}" and its saved configuration from MvnBuilder? Project files on disk will be kept. This cannot be undone.`,
+                confirmLabel: 'Delete workspace',
                 requireTyped: workspaceName,
-                requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                requireTypedLabel: 'Type the workspace name to confirm:',
                 danger: true,
                 onConfirm: () => {
                     document.getElementById(`delete-workspace-form-${workspaceId}`).requestSubmit();
@@ -1182,20 +1463,24 @@
 
         function toggleProjectRow(id, btn) {
             const row = document.getElementById(`project-row-${id}`);
-            const isEnabled = btn.classList.contains('text-green-600');
+            const isEnabled = btn.classList.contains('text-success');
             
             if (isEnabled) {
                 // Disable
-                btn.classList.remove('bg-green-50', 'text-green-600', 'border-green-100', 'hover:bg-green-100');
-                btn.classList.add('bg-gray-50', 'text-gray-400', 'border-gray-100', 'hover:bg-gray-100');
+                btn.classList.remove('bg-green-50', 'text-success', 'border-green-100', 'hover:bg-green-100');
+                btn.classList.add('bg-gray-50', 'text-muted', 'border-gray-100', 'hover:bg-gray-100');
                 btn.title = 'Enable Project';
-                row.classList.add('opacity-40', 'grayscale');
+                btn.setAttribute('aria-pressed', 'false');
+                row.classList.add('project-skipped');
+                row.querySelector('.project-state').classList.remove('hidden');
             } else {
                 // Enable
-                btn.classList.add('bg-green-50', 'text-green-600', 'border-green-100', 'hover:bg-green-100');
-                btn.classList.remove('bg-gray-50', 'text-gray-400', 'border-gray-100', 'hover:bg-gray-100');
+                btn.classList.add('bg-green-50', 'text-success', 'border-green-100', 'hover:bg-green-100');
+                btn.classList.remove('bg-gray-50', 'text-muted', 'border-gray-100', 'hover:bg-gray-100');
                 btn.title = 'Disable Project';
-                row.classList.remove('opacity-40', 'grayscale');
+                btn.setAttribute('aria-pressed', 'true');
+                row.classList.remove('project-skipped');
+                row.querySelector('.project-state').classList.add('hidden');
             }
         }
 
@@ -1216,9 +1501,15 @@
         function renderProjectSelection() {
             const checkboxes = document.querySelectorAll('#project-table-body .project-checkbox');
             checkboxes.forEach(checkbox => { checkbox.checked = selectedProjectIds.has(checkbox.value); });
-            document.getElementById('selected-count').innerText = selectedProjectIds.size;
+            const selectedCount = selectedProjectIds.size;
+            document.getElementById('selected-status').textContent = selectedCount === 0
+                ? (checkboxes.length === 0 ? 'Add a project to use bulk actions' : 'Select projects to use bulk actions')
+                : `${selectedCount} project${selectedCount === 1 ? '' : 's'} selected`;
+            document.getElementById('bulk-actions').classList.toggle('hidden', selectedCount === 0);
+            if (selectedCount === 0) document.getElementById('bulk-more-menu').open = false;
             const selectAll = document.getElementById('select-all');
             if (selectAll) {
+                selectAll.disabled = checkboxes.length === 0;
                 selectAll.checked = checkboxes.length > 0 && selectedProjectIds.size === checkboxes.length;
                 selectAll.indeterminate = selectedProjectIds.size > 0 && selectedProjectIds.size < checkboxes.length;
             }
@@ -1263,8 +1554,8 @@
             document.getElementById('workspace-refresh-button').disabled = false;
             const status = document.getElementById('workspace-refresh-status');
             status.textContent = message;
-            status.classList.toggle('text-red-700', isError);
-            status.classList.toggle('text-green-700', !isError);
+            status.classList.toggle('text-danger', isError);
+            status.classList.toggle('text-success', !isError);
         }
 
         /** Invalidates an older background Git result before the project list changes. */
@@ -1281,7 +1572,7 @@
             const controller = new AbortController();
             gitController = controller;
             const status = document.getElementById('workspace-git-status');
-            status.textContent = 'Updating Git branches...';
+            status.textContent = 'Reading Git references...';
             try {
                 const response = await fetch(status.dataset.url, {
                     signal: controller.signal,
@@ -1295,12 +1586,12 @@
                     const branch = document.getElementById(`git-branch-${update.projectId}`);
                     if (branch) branch.textContent = update.branch || 'Unknown';
                 });
-                status.textContent = 'Git branches are up to date.';
-                if (forRefresh) finishRefresh('Projects and Git branches refreshed.', false);
+                status.textContent = 'Git references refreshed.';
+                if (forRefresh) finishRefresh('Projects and Git references refreshed.', false);
             } catch (error) {
                 if (generation !== gitGeneration) return;
-                status.textContent = 'Git branches could not be updated; cached values are shown.';
-                if (forRefresh) finishRefresh('Projects refreshed, but Git branches could not be updated.', true);
+                status.textContent = 'Git references could not be updated; cached values are shown.';
+                if (forRefresh) finishRefresh('Projects refreshed, but Git references could not be updated.', true);
             } finally {
                 if (generation === gitGeneration) gitController = null;
             }
@@ -1325,7 +1616,7 @@
             const overlay = document.getElementById('workspace-refresh-overlay');
             overlay.classList.remove('hidden');
             overlay.setAttribute('aria-hidden', 'false');
-            document.getElementById('workspace-refresh-status').classList.remove('text-red-700', 'text-green-700');
+            document.getElementById('workspace-refresh-status').classList.remove('text-danger', 'text-success');
             setRefreshPhase('Refreshing projects from disk...');
         });
 
@@ -1333,7 +1624,7 @@
             if (!refreshInProgress || event.detail.target?.id !== 'project-table-body') return;
             reconcileProjectSelection();
             initializeProjectSorting();
-            setRefreshPhase('Projects refreshed. Updating Git branches...');
+            setRefreshPhase('Projects refreshed. Reading Git references...');
             requestGitStatus(true);
         });
 
@@ -1355,23 +1646,38 @@
             requestGitStatus(false);
         });
 
+        document.addEventListener('DOMContentLoaded', function() {
+            setLogFollow(readFollowPreference());
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && notificationPanelOpen) {
+                event.preventDefault();
+                closeNotificationPanel();
+            }
+        });
+
+        if (document.getElementById('notification-bell')) {
+            document.addEventListener('DOMContentLoaded', loadNotificationCount, { once: true });
+        }
+
         function executeBulkAction(action, overrideIds = null) {
             const selectedIds = overrideIds || Array.from(selectedProjectIds);
 
             if (selectedIds.length === 0) {
                 ConfirmationModal.info({
-                    title: 'Sin proyectos seleccionados',
-                    message: 'Selecciona al menos un proyecto de la lista antes de ejecutar esta acción.',
-                    primaryLabel: 'Entendido'
+                    title: 'No projects selected',
+                    message: 'Select at least one project, then choose an action.',
+                    primaryLabel: 'Close'
                 });
                 return;
             }
 
             if (action === 'restore-staged') {
                 ConfirmationModal.confirm({
-                    title: '¿Unstage de los proyectos seleccionados?',
-                    message: `Se eliminarán todos los ficheros del staging area en ${selectedIds.length} proyecto(s) seleccionado(s).\n\nLos cambios seguirán en el working tree y esta acción es reversible.`,
-                    confirmLabel: 'Unstage',
+                    title: 'Unstage selected changes?',
+                    message: `Unstage changes in ${selectedIds.length} selected ${selectedIds.length === 1 ? 'project' : 'projects'}? Projects marked Skipped are excluded. Your changes stay in the working tree and can be staged again.`,
+                    confirmLabel: 'Unstage changes',
                     danger: false,
                     onConfirm: () => _executeBulkActionRequest(action, selectedIds)
                 });
@@ -1381,13 +1687,25 @@
             if (action === 'checkout-discard') {
                 const workspaceName = document.querySelector('[data-workspace-name]')?.getAttribute('data-workspace-name') || '';
                 ConfirmationModal.confirm({
-                    title: '¿Descartar cambios en los proyectos seleccionados?',
-                    message: `Se descartarán todos los cambios no staged en ${selectedIds.length} proyecto(s) seleccionado(s).\n\nEsta acción no se puede deshacer.`,
-                    confirmLabel: 'Descartar',
+                    title: 'Discard selected unstaged changes?',
+                    message: `Discard unstaged changes to tracked files in ${selectedIds.length} selected ${selectedIds.length === 1 ? 'project' : 'projects'}? Projects marked Skipped are excluded. Staged changes and untracked files are kept. This cannot be undone.`,
+                    confirmLabel: 'Discard changes',
                     requireTyped: workspaceName,
-                    requireTypedLabel: 'Escribe el nombre del workspace para confirmar:',
+                    requireTypedLabel: 'Type the workspace name to confirm:',
                     danger: true,
                     onConfirm: () => _executeBulkActionRequest(action, selectedIds)
+                });
+                return;
+            }
+
+            if (action === 'stash') {
+                ConfirmationModal.confirm({
+                    title: 'Stash selected changes?',
+                    message: `Stash local changes in ${selectedIds.length} selected ${selectedIds.length === 1 ? 'project' : 'projects'}? Projects marked Skipped are excluded. Your changes stay recoverable and can be restored later with git stash.`,
+                    confirmLabel: 'Stash changes',
+                    danger: false,
+                    checkbox: { label: 'Include untracked files', checked: false },
+                    onConfirm: (includeUntracked) => _executeBulkActionRequest(action, selectedIds, { includeUntracked })
                 });
                 return;
             }
@@ -1400,7 +1718,7 @@
             _executeBulkActionRequest(action, selectedIds);
         }
 
-        function _executeBulkActionRequest(action, selectedIds) {
+        function _executeBulkActionRequest(action, selectedIds, options = null) {
             if (action === 'build') {
                 clearLogs();
                 document.getElementById('retry-container').classList.add('hidden');
@@ -1409,15 +1727,18 @@
             const formData = new FormData();
             formData.append('action', action);
             selectedIds.forEach(id => formData.append('projectIds', id));
+            if (options && typeof options.includeUntracked === 'boolean') {
+                formData.append('includeUntracked', String(options.includeUntracked));
+            }
 
             fetch(`/workspaces/${workspaceId}/bulk-action`, {
                 method: 'POST',
                 body: formData
             })
                 .then(response => requireSuccessfulResponse(response,
-                    'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.'))
-                .catch(error => showRequestError('Error al ejecutar la acción', error,
-                    'Ha ocurrido un error al ejecutar la acción en los proyectos seleccionados.'));
+                    'The action could not start. Check the connection and try again.'))
+                .catch(error => showRequestError('Unable to start action', error,
+                    'The action could not start. Check the connection and try again.'));
         }
 
         function addSelectedProjects() {
@@ -1569,41 +1890,103 @@
             }
         }
 
-        // SortableJS init
+        function closeActionMenu(button) {
+            const menu = button.closest('details');
+            menu.open = false;
+            menu.querySelector('summary').focus();
+        }
+
+        let projectOrderSaving = false;
+
+        function updateOrderControls(tbody) {
+            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+            rows.forEach((row, index) => {
+                row.querySelectorAll('[data-move]').forEach(button => {
+                    const direction = Number(button.dataset.move);
+                    button.disabled = projectOrderSaving || index + direction < 0 || index + direction >= rows.length;
+                });
+            });
+        }
+
+        function captureProjectOrder(tbody) {
+            return Array.from(tbody.querySelectorAll('tr[data-id]'), row => ({
+                row, order: row.querySelector('.order-number')?.textContent
+            }));
+        }
+
+        async function saveProjectOrder(tbody, previousOrder) {
+            if (projectOrderSaving) return;
+            projectOrderSaving = true;
+            tbody.setAttribute('aria-busy', 'true');
+            updateOrderControls(tbody);
+            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+            rows.forEach((row, index) => {
+                const number = row.querySelector('.order-number');
+                if (number) number.textContent = index + 1;
+            });
+            try {
+                const response = await fetch(`/workspaces/${workspaceId}/update-order`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(rows.map(row => row.dataset.id))
+                });
+                if (!response.ok) throw new Error('The project order could not be saved. Please try again.');
+                const status = document.getElementById('project-order-status');
+                if (status) status.textContent = 'Project order saved.';
+            } catch (error) {
+                // Keep the visible order consistent with the server on failure.
+                previousOrder?.forEach(({row, order}) => {
+                    tbody.appendChild(row);
+                    const number = row.querySelector('.order-number');
+                    if (number) number.textContent = order;
+                });
+                ConfirmationModal.error({title: 'Unable to update project order', message: error.message});
+            } finally {
+                projectOrderSaving = false;
+                tbody.setAttribute('aria-busy', 'false');
+                updateOrderControls(tbody);
+            }
+        }
+
+        async function moveProject(button, direction) {
+            if (projectOrderSaving) return;
+            const row = button.closest('tr[data-id]');
+            const tbody = row?.parentElement;
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+            const index = rows.indexOf(row);
+            const neighbor = rows[index + direction];
+            if (!neighbor) return;
+            const previousOrder = captureProjectOrder(tbody);
+            const hadFocus = row.contains(document.activeElement);
+            if (direction < 0) tbody.insertBefore(row, neighbor);
+            else tbody.insertBefore(neighbor, row);
+            await saveProjectOrder(tbody, previousOrder);
+            if (hadFocus && document.activeElement === document.body) {
+                const nextControl = !button.disabled ? button : row.querySelector(`[data-move="${-direction}"]`);
+                nextControl?.focus();
+            }
+        }
+
+        function reorderProjectByKey(event, button) {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            moveProject(button, event.key === 'ArrowUp' ? -1 : 1);
+        }
+
         function initializeProjectSorting() {
             const tbody = document.getElementById('project-table-body');
-            if (tbody && !tbody.dataset.sortableInitialized) {
+            if (!tbody) return;
+            updateOrderControls(tbody);
+            if (!tbody.dataset.sortableInitialized && tbody.querySelector('tr[data-id]')) {
                 tbody.dataset.sortableInitialized = 'true';
+                let previousOrder;
                 new Sortable(tbody, {
                     animation: 150,
+                    handle: '.project-order-handle',
                     ghostClass: 'bg-indigo-50',
-                    onEnd: function (evt) {
-                        const rows = tbody.querySelectorAll('tr');
-                        const projectIds = [];
-                        rows.forEach((row, index) => {
-                            projectIds.push(row.getAttribute('data-id'));
-                            const orderSpan = row.querySelector('.order-number');
-                            if (orderSpan) orderSpan.innerText = index + 1;
-                        });
-
-                        fetch(`/workspaces/${workspaceId}/update-order`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify(projectIds)
-                        }).then(response => {
-                            if (!response.ok) {
-                                throw new Error('The project order could not be saved.');
-                            }
-                        }).catch(error => {
-                            ConfirmationModal.error({
-                                title: 'Unable to update project order',
-                                message: error.message || 'The project order could not be saved.',
-                                onClose: () => window.location.reload()
-                            });
-                        });
-                    }
+                    onMove: () => !projectOrderSaving,
+                    onStart: () => { previousOrder = captureProjectOrder(tbody); },
+                    onEnd: () => saveProjectOrder(tbody, previousOrder)
                 });
             }
         }

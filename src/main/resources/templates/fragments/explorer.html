@@ -3,11 +3,11 @@
 <body>
     <div th:fragment="explorer-content">
         <div class="px-4 sm:px-6 py-4 border-b border-gray-100 flex justify-between items-center gap-2 bg-gray-50">
-            <div>
-                <h3 class="text-lg font-bold text-gray-800">File Explorer</h3>
-                <p class="text-xs text-gray-400 font-mono truncate max-w-[65vw] sm:max-w-xs" th:text="${currentPath}">/path/to/dir</p>
+            <div class="min-w-0">
+                <h3 class="text-lg font-bold text-gray-800">Add projects</h3>
+                <p class="text-xs text-muted font-mono truncate max-w-[65vw] sm:max-w-xs" th:text="${currentPath}">/path/to/dir</p>
             </div>
-            <button onclick="document.getElementById('explorer-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+            <button type="button" aria-label="Close Add Projects" onclick="document.getElementById('explorer-modal').classList.add('hidden')" class="icon-button text-muted hover:text-gray-600">
                 <svg xmlns:th="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -16,18 +16,18 @@
 
         <!-- Custom Path Direct Entry -->
         <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-100">
-            <label class="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 font-semibold">Direct Path Entry</label>
+            <label for="custom-project-path" class="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5 font-semibold">Project folder path</label>
             <div class="flex flex-wrap gap-2">
                 <input type="text" id="custom-project-path" th:value="${currentPath}" class="min-w-0 w-full sm:w-auto flex-grow px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all font-mono" placeholder="Enter absolute directory path...">
                 <button type="button" 
                         onclick="loadCustomPath()" 
                         class="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-2 rounded-lg font-semibold text-xs transition-all flex items-center shadow-sm">
-                    Go
+                    Open path
                 </button>
                 <button type="button" 
                         onclick="addCustomPathDirectly()" 
                         class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-semibold text-xs transition-all flex items-center shadow-sm shadow-indigo-100">
-                    Add
+                    Add project
                 </button>
             </div>
         </div>
@@ -46,37 +46,37 @@
             
             <div class="space-y-1">
                 <div th:each="item : ${items}" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-all">
-                    <div class="flex items-center space-x-3 flex-grow cursor-pointer" 
+                    <button type="button" class="flex items-center gap-3 flex-grow min-w-0 text-left"
                          th:if="${item.directory}"
                          th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${item.path})}"
                          hx-target="#explorer-modal-content">
-                        <div class="p-2 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-amber-100 transition-colors">
+                        <div class="p-2 shrink-0 bg-amber-50 text-warning rounded-lg group-hover:bg-amber-100 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                             </svg>
                         </div>
-                        <span class="text-sm font-medium text-gray-700" th:text="${item.name}">folder-name</span>
-                    </div>
+                        <span class="text-sm font-medium text-gray-700 break-all" th:text="${item.name}">folder-name</span>
+                    </button>
                     
-                    <div class="flex items-center space-x-3 flex-grow" th:if="${!item.directory}">
-                        <div class="p-2 bg-gray-50 text-gray-400 rounded-lg">
+                    <div class="flex items-center space-x-3 flex-grow min-w-0" th:if="${!item.directory}">
+                        <div class="p-2 bg-gray-50 text-muted rounded-lg">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                             </svg>
                         </div>
-                        <span class="text-sm font-medium text-gray-400" th:text="${item.name}">file-name</span>
+                        <span class="text-sm font-medium text-muted break-all" th:text="${item.name}">file-name</span>
                     </div>
 
-                    <div th:if="${item.mavenProject}" class="flex items-center space-x-2">
+                    <div th:if="${item.mavenProject}" class="explorer-markers flex items-center gap-2 shrink-0">
                         <span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase border border-indigo-100">Maven</span>
-                        <input type="checkbox" name="selected-paths" th:value="${item.path}" class="explorer-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <label class="project-selection"><input type="checkbox" name="selected-paths" th:aria-label="${'Select project ' + item.name}" th:value="${item.path}" class="explorer-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-wrap gap-2 justify-between items-center">
-            <span class="text-xs text-gray-400 font-medium"><span id="explorer-count">0</span> projects selected</span>
+            <span class="text-xs text-muted font-medium"><span id="explorer-count">0 projects selected</span></span>
             <button onclick="addSelectedProjects()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-bold text-sm">
                 Add Selected
             </button>
@@ -86,7 +86,7 @@
             document.querySelectorAll('.explorer-checkbox').forEach(cb => {
                 cb.addEventListener('change', () => {
                     const count = document.querySelectorAll('.explorer-checkbox:checked').length;
-                    document.getElementById('explorer-count').innerText = count;
+                    document.getElementById('explorer-count').textContent = `${count} ${count === 1 ? 'project' : 'projects'} selected`;
                 });
             });
 

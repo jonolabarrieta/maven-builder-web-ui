@@ -1,4 +1,15 @@
 /* Keep the action bar reachable on short screens and the project list readable. */
+body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+[id$="-modal"] {
+    padding-top: max(.5rem, env(safe-area-inset-top));
+    padding-bottom: max(.5rem, env(safe-area-inset-bottom));
+    padding-left: max(.5rem, env(safe-area-inset-left));
+    padding-right: max(.5rem, env(safe-area-inset-right));
+}
+#bulk-action-toolbar { top: var(--workspace-nav-height, 0px); }
 @media (max-height: 700px) {
     #bulk-action-toolbar {
         max-height: calc(100dvh - var(--workspace-nav-height, 0px) - 1rem);
@@ -6,12 +17,29 @@
     }
 }
 
-@media (min-width: 768px) and (max-width: 1199px) {
+@media (min-width: 1024px) and (max-width: 1199px) {
     #project-table { min-width: 980px; }
 }
 
-@media (max-width: 767px) {
-    #project-table, #project-table-body { display: block; width: 100%; }
+@media (min-width: 1024px) {
+    #project-table :is(th, td) { padding-left: 1rem; padding-right: 1rem; }
+    #project-table th, #project-table td:nth-child(6) { white-space: nowrap; }
+}
+
+/* Project records use one column on phones and two on portrait tablets. */
+.project-order-buttons { display: none; }
+.adapt-menu-close { display: none; }
+.project-selection { display: inline-flex; align-items: center; justify-content: center; }
+@media (max-width: 1023px) {
+    /* Let the navigation scroll away; keep only selection actions pinned. */
+    #workspace-nav { position: static; }
+    #bulk-action-toolbar {
+        top: 0;
+        max-height: calc(100dvh - 1rem);
+        overflow-y: auto;
+    }
+    #project-table { display: block; width: 100%; min-width: 0; }
+    #project-table-body { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
     #project-table thead { display: none; }
     #project-table-body tr {
         display: grid;
@@ -38,4 +66,69 @@
         text-align: left;
     }
     #project-table-body td:nth-child(7) > div { justify-content: flex-start; }
+    .project-order-buttons { display: inline-flex; gap: .25rem; }
+    .project-order-handle { display: none; }
+    #project-table-body td:nth-child(3) { display: flex; align-items: center; gap: .25rem; }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+    #project-table-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #project-table-body tr { align-content: start; border-right: 1px solid #e5e7eb; }
+}
+
+/* Property values need their own line when a side-by-side table gets narrow. */
+@media (max-width: 639px) {
+    :is(#project-properties-table, #parent-properties-table),
+    :is(#project-properties-table, #parent-properties-table) tbody,
+    :is(#project-properties-table, #parent-properties-table) tr:not(.hidden) { display: block; width: 100%; }
+    :is(#project-properties-table, #parent-properties-table) thead { display: none; }
+    :is(#project-properties-table, #parent-properties-table) td { display: block; width: 100%; }
+    :is(#project-properties-table, #parent-properties-table) td:first-child { background: #f9fafb; }
+    .explorer-markers { flex-direction: column; gap: .25rem; }
+    .explorer-markers .project-selection { order: -1; }
+}
+
+/* Enlarged hit areas also apply to touch laptops and wide tablets. */
+@media (max-width: 1023px), (any-pointer: coarse) {
+    :root :is(button, summary, select, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea) {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    :root :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { font-size: 1rem; }
+    nav a, details > div a { min-height: 44px; display: flex; align-items: center; }
+    .project-selection { min-width: 44px; min-height: 44px; }
+    #bulk-action-toolbar label { display: inline-flex; align-items: center; min-height: 44px; }
+    .touch-reveal { opacity: 1; }
+    .project-order-buttons { display: inline-flex; gap: .25rem; }
+    .project-order-handle { display: none; }
+}
+
+/* Narrow menus stay inside the window and clear the sticky selection bar. */
+@media (max-width: 1023px) {
+    #workspace-nav { backdrop-filter: none; }
+    #action-summary-container { bottom: max(1rem, env(safe-area-inset-bottom)); }
+    #workspace-actions-menu > div, #bulk-more-menu > div {
+        position: fixed;
+        left: max(1rem, env(safe-area-inset-left));
+        right: max(1rem, env(safe-area-inset-right));
+        bottom: max(1rem, env(safe-area-inset-bottom));
+        top: auto;
+        width: auto;
+        max-width: 28rem;
+        margin-inline: auto;
+        max-height: calc(100dvh - 2rem);
+        z-index: 70;
+    }
+    .adapt-menu-close { display: block; }
+    #project-properties-table td:last-child, #parent-properties-table td:last-child { padding-right: 3.5rem; }
+}
+
+/* Landscape and software keyboards need the height for the task itself. */
+@media (max-height: 500px) {
+    #workspace-nav, #bulk-action-toolbar { position: static; }
+    [role="dialog"] { overscroll-behavior: contain; }
+}
+
+@media (any-pointer: coarse) {
+    :root button:active, :root summary:active { filter: brightness(.95); }
 }

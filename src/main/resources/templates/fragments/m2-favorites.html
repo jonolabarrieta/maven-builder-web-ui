@@ -2,7 +2,7 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
     <div th:fragment="m2-favorites-list" id="m2-favorites-content">
-        <div th:if="${favorites.empty}" class="text-center py-6 text-gray-500 text-sm">
+        <div th:if="${favorites.empty}" class="text-center py-6 text-muted text-sm">
             No favorite folders configured.
         </div>
         
@@ -10,19 +10,19 @@
             <div th:each="fav : ${favorites}" class="bg-gray-50 border border-gray-100 rounded-xl p-3 flex justify-between items-center group hover:bg-gray-100/50 transition-all">
                 <div class="min-w-0 pr-2">
                     <p class="font-semibold text-gray-800 text-sm truncate" th:text="${fav.groupId}" th:title="${fav.groupId}">r01.fabric.coreservices</p>
-                    <p class="text-[10px] text-gray-400 font-mono truncate" th:text="${'~/.m2/repository/' + fav.groupId.replace('.', '/')}" th:title="${'~/.m2/repository/' + fav.groupId.replace('.', '/')}">~/.m2/repository/...</p>
+                    <p class="text-[10px] text-muted font-mono truncate" th:text="${'~/.m2/repository/' + fav.groupId.replace('.', '/')}" th:title="${'~/.m2/repository/' + fav.groupId.replace('.', '/')}">~/.m2/repository/...</p>
                 </div>
                 <div class="flex items-center space-x-1 shrink-0">
                     <button th:attr="hx-post=@{/settings/m2-favorites/{id}/clear-m2(id=${fav.id})}" 
-                            hx-confirm="Are you sure you want to delete this ENTIRE folder from your local M2 repository?"
+                            hx-confirm="Delete this folder and all its artifacts from the local Maven repository (.m2)? This removes the local cached files."
                             hx-swap="none"
-                            class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-600 bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-colors shadow-sm"
+                            class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-danger bg-red-50 border border-red-100 rounded-lg hover:bg-red-100 transition-colors shadow-sm"
                             title="Delete folder from M2">
-                        Clear M2
+                        Delete M2 files
                     </button>
-                    <button th:attr="hx-post=@{/settings/m2-favorites/{id}/delete(id=${fav.id})}"
+                    <button aria-label="Remove from favorites" th:attr="hx-post=@{/settings/m2-favorites/{id}/delete(id=${fav.id})}"
                             hx-target="#m2-favorites-content"
-                            class="p-1 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-200"
+                            class="icon-button p-1 text-muted hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-200"
                             title="Remove from favorites">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

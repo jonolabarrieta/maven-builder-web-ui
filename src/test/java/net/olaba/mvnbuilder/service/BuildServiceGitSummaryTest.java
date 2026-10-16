@@ -32,6 +32,8 @@ class BuildServiceGitSummaryTest {
     @Mock private BuildProfileRepository buildProfileRepository;
     @Mock private SimpMessagingTemplate messagingTemplate;
     @Mock private SystemSettingService systemSettingService;
+    @Mock private NotificationService notificationService;
+    @Mock private BuildHistoryService buildHistoryService;
     @InjectMocks private BuildService buildService;
 
     @BeforeEach
@@ -76,7 +78,7 @@ class BuildServiceGitSummaryTest {
 
     private ActionSummary sentSummary() {
         final ArgumentCaptor<ActionSummary> captor = ArgumentCaptor.forClass(ActionSummary.class);
-        verify(messagingTemplate).convertAndSend(eq("/topic/action-summary"), captor.capture());
+        verify(notificationService).publish(captor.capture(), any(), any());
         return captor.getValue();
     }
 
