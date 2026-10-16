@@ -9,7 +9,7 @@
     const VARIANTS = Object.freeze({
         info: {
             title: 'Information',
-            primaryLabel: 'OK',
+            primaryLabel: 'Close',
             color: '#4f46e5',
             hoverColor: '#4338ca',
             icon: 'i',
@@ -80,15 +80,24 @@
                     </div>
                     <div style="padding:1.25rem 1.5rem;">
                         <p id="confirmation-modal-message"
-                           style="margin:0;font-size:0.875rem;color:#475569;line-height:1.65;white-space:pre-line;"></p>
+                           style="margin:0;font-size:0.875rem;color:#475569;line-height:1.65;white-space:pre-line;overflow-wrap:anywhere;"></p>
                         <div id="confirmation-modal-typed-section" style="display:none;margin-top:1rem;">
                             <label id="confirmation-modal-typed-label" for="confirmation-modal-typed-input"
                                    style="display:block;font-size:0.75rem;font-weight:600;color:#64748b;margin-bottom:0.4rem;
                                           text-transform:uppercase;letter-spacing:0.05em;"></label>
                             <input id="confirmation-modal-typed-input" type="text" autocomplete="off"
-                                   style="width:100%;box-sizing:border-box;padding:0.65rem 0.75rem;border:1.5px solid #e2e8f0;
+                                   style="width:100%;box-sizing:border-box;padding:0.65rem 0.75rem;border:1.5px solid #6b7280;
                                           border-radius:0.625rem;font-size:0.875rem;font-family:'JetBrains Mono',monospace;
                                           color:#1e293b;outline:none;transition:border-color 0.2s;">
+                        </div>
+                        <div id="confirmation-modal-checkbox-section" style="display:none;margin-top:1rem;">
+                            <label for="confirmation-modal-checkbox-input"
+                                   style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;
+                                          color:#334155;cursor:pointer;line-height:1.4;">
+                                <input id="confirmation-modal-checkbox-input" type="checkbox"
+                                       style="width:1rem;height:1rem;flex:0 0 auto;accent-color:#4f46e5;cursor:pointer;">
+                                <span id="confirmation-modal-checkbox-label"></span>
+                            </label>
                         </div>
                     </div>
                     <div style="padding:1rem 1.5rem 1.5rem;display:flex;justify-content:flex-end;gap:0.75rem;
@@ -118,6 +127,9 @@
             typedSection: document.getElementById('confirmation-modal-typed-section'),
             typedLabel: document.getElementById('confirmation-modal-typed-label'),
             typedInput: document.getElementById('confirmation-modal-typed-input'),
+            checkboxSection: document.getElementById('confirmation-modal-checkbox-section'),
+            checkboxLabel: document.getElementById('confirmation-modal-checkbox-label'),
+            checkboxInput: document.getElementById('confirmation-modal-checkbox-input'),
             cancelButton: document.getElementById('confirmation-modal-cancel'),
             primaryButton: document.getElementById('confirmation-modal-primary')
         };
@@ -193,7 +205,7 @@
         modal.primaryButton.style.cursor = matches ? 'pointer' : 'not-allowed';
         modal.typedInput.style.borderColor = modal.typedInput.value
             ? (matches ? '#16a34a' : '#dc2626')
-            : '#e2e8f0';
+            : '#6b7280';
     }
 
     /**
@@ -210,15 +222,17 @@
         const session = currentSession;
         session.settled = true;
         currentSession = null;
+        const checkboxValue = session.checkbox ? modal.checkboxInput.checked : undefined;
         modal.root.style.display = 'none';
         modal.typedInput.value = '';
+        modal.checkboxInput.checked = false;
         if (restoreFocus && session.opener && document.contains(session.opener)) {
             session.opener.focus();
         }
 
         if (session.confirmation) {
             if (reason === 'primary') {
-                session.onConfirm();
+                session.onConfirm(checkboxValue);
             } else {
                 session.onCancel();
             }
@@ -265,6 +279,7 @@
             onClose: typeof options.onClose === 'function' ? options.onClose : () => {},
             opener: document.activeElement,
             requireTyped: confirmation && options.requireTyped ? String(options.requireTyped) : null,
+            checkbox: confirmation && options.checkbox && options.checkbox.label ? options.checkbox : null,
             settled: false
         };
 
@@ -296,12 +311,21 @@
             modal.primaryButton.disabled = true;
             modal.primaryButton.style.opacity = '0.45';
             modal.primaryButton.style.cursor = 'not-allowed';
-            modal.typedInput.style.borderColor = '#e2e8f0';
+            modal.typedInput.style.borderColor = '#6b7280';
         } else {
             modal.typedSection.style.display = 'none';
             modal.primaryButton.disabled = false;
             modal.primaryButton.style.opacity = '1';
             modal.primaryButton.style.cursor = 'pointer';
+        }
+
+        if (currentSession.checkbox) {
+            modal.checkboxSection.style.display = 'block';
+            modal.checkboxLabel.textContent = currentSession.checkbox.label;
+            modal.checkboxInput.checked = currentSession.checkbox.checked === true;
+        } else {
+            modal.checkboxSection.style.display = 'none';
+            modal.checkboxInput.checked = false;
         }
 
         modal.root.style.display = 'block';
@@ -342,7 +366,7 @@
     function getHtmxErrorMessage(event) {
         const xhr = event.detail && event.detail.xhr;
         const responseText = xhr && typeof xhr.responseText === 'string' ? xhr.responseText.trim() : '';
-        if (responseText) {
+        if (responseText && !['<', '{', '['].includes(responseText[0])) {
             return responseText.substring(0, 800);
         }
         if (event.type === 'htmx:timeout') {

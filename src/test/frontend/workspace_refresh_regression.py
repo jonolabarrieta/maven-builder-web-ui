@@ -35,8 +35,11 @@ def build_harness() -> str:
           <span id="workspace-refresh-phase"></span></div>
         <div id="workspace-refresh-status"></div>
         <div id="workspace-git-status" data-url="/workspaces/1/git-status-table"></div>
-        <div id="selected-count"></div><input id="select-all" type="checkbox">
+        <span id="selected-status"></span><input id="select-all" type="checkbox">
+        <div id="bulk-actions" class="hidden"></div><details id="bulk-more-menu"></details>
         <div id="action-summary-container"></div>
+        <div id="log-tabs"><button id="tab-Global" aria-pressed="true"></button></div>
+        <div id="log-containers"><div id="log-container-Global"></div></div>
         <table><tbody id="project-table-body">
           <tr data-id="1"><td><input class="project-checkbox" value="1" type="checkbox"></td>
             <td><span id="git-branch-1">cached-1</span></td></tr>
@@ -50,10 +53,15 @@ def build_harness() -> str:
           window.Sortable = class { constructor() { window.sortableCount++; } };
           window.SockJS = class { constructor() {} };
           window.Stomp = {over: () => ({connect: () => {}, subscribe: () => {}})};
-          window.ConfirmationModal = {info: () => {}};
+          window.ConfirmationModal = {info: () => {}, error: () => { window.orderError = true; }};
           window.requests = [];
           window.bulkIds = [];
+          window.savedOrders = [];
           window.fetch = (url, options = {}) => {
+            if (url.includes('/update-order')) {
+              window.savedOrders.push(JSON.parse(options.body));
+              return new Promise(resolve => { window.pendingOrder = resolve; });
+            }
             if (url.includes('/bulk-action')) {
               window.bulkIds.push(options.body.getAll('projectIds'));
               return Promise.resolve({ok: true});
@@ -99,6 +107,20 @@ def build_harness() -> str:
               && document.querySelector('input[value="1"]').checked;
             checks.branchEscaped = document.getElementById('git-branch-1').textContent
               === '<img src=x onerror=alert(1)>' && !document.querySelector('#git-branch-1 img');
+            const referenceRows = document.getElementById('project-table-body');
+            const selectedCheckbox = document.querySelector('input[value="1"]');
+            requestGitStatus(false);
+            complete(requests.at(-1), [
+              {projectId: 1, branch: 'v1.0.0 · detached HEAD'},
+              {projectId: 2, branch: 'feature/demo'}
+            ]);
+            await flush();
+            checks.typedReferenceLabelsSurviveBackgroundUpdate =
+              document.getElementById('git-branch-1').textContent === 'v1.0.0 · detached HEAD'
+              && document.getElementById('git-branch-2').textContent === 'feature/demo'
+              && document.getElementById('project-table-body') === referenceRows
+              && document.querySelector('input[value="1"]') === selectedCheckbox
+              && selectedCheckbox.checked && selectedProjectIds.has('1');
             clickProject('2');
 
             requestGitStatus(false);
@@ -115,7 +137,7 @@ def build_harness() -> str:
             checks.reconciled = !selectedProjectIds.has('1') && selectedProjectIds.has('2')
               && document.querySelector('input[value="2"]').checked
               && !document.querySelector('input[value="3"]').checked
-              && document.getElementById('selected-count').textContent === '1';
+              && document.getElementById('selected-status').textContent === '1 project selected';
             checks.gitPhaseVisible = !document.getElementById('workspace-refresh-overlay').classList.contains('hidden')
               && document.getElementById('workspace-refresh-phase').textContent.includes('Git');
             complete(staleGit, [{projectId: 2, branch: 'stale'}]);
@@ -136,7 +158,7 @@ def build_harness() -> str:
             executeBulkAction('git-fetch');
             await flush();
             checks.selectAllBulk = JSON.stringify(bulkIds.at(-1)) === JSON.stringify(['2', '3'])
-              && document.getElementById('selected-count').textContent === '2';
+              && document.getElementById('selected-status').textContent === '2 projects selected';
             checks.sortInitializedOncePerBody = sortableCount === 2;
 
             htmxEvent('htmx:beforeRequest');
@@ -166,6 +188,71 @@ def build_harness() -> str:
             await flush();
             checks.normalFormFallbackSpinner = document.getElementById('global-http-spinner')
               .getAttribute('aria-hidden') === 'false';
+
+            const projectName = "platform's <b>shared</b> & tools";
+            for (const summary of [
+              {action: 'build', success: true, succeededProjects: [projectName]},
+              {action: 'build', success: false, failedProject: projectName, succeededProjects: [projectName]},
+              {action: 'git-fetch', success: true, changedProjects: [projectName], noChangesProjects: [projectName]},
+              {action: 'git-fetch', success: false, failedProjects: [projectName]}
+            ]) {
+              showActionSummary(summary);
+            }
+            const feedback = document.getElementById('action-summary-container');
+            checks.summaryNamesAreText = !feedback.querySelector('b')
+              && feedback.textContent.split(projectName).length === 7;
+            checks.summaryDismissNamed = feedback.querySelectorAll('button[aria-label="Dismiss action summary"]').length === 4;
+            checks.summaryIdsAreUnique = new Set(Array.from(feedback.children, toast => toast.id)).size === 4;
+
+            appendLog(projectName, 'Build output');
+            const tab = document.getElementById(`tab-${projectName}`);
+            checks.logNamesAreText = tab.textContent.includes(projectName) && !tab.querySelector('b')
+              && document.getElementById('log-container-Global').textContent.includes(projectName)
+              && !document.querySelector('#log-container-Global b');
+            const closeLog = tab.parentElement.querySelector('button[aria-label]');
+            closeLog.focus();
+            closeLog.click();
+            checks.closeLogRestoresFocus = !document.getElementById(`tab-${projectName}`)
+              && !document.querySelector('.project-log-tab')
+              && document.activeElement.id === 'tab-Global'
+              && document.activeElement.getAttribute('aria-pressed') === 'true';
+            appendLog('second-project', 'Output');
+            clearLogs();
+            checks.clearLogsRemovesControls = !document.querySelector('.project-log-tab')
+              && Object.keys(projectTabs).join() === 'Global';
+
+            const orderBody = document.getElementById('project-table-body');
+            Array.from(orderBody.children).forEach((row, index) => {
+              row.insertAdjacentHTML('beforeend', `<td><span class="order-number">${index + 1}</span>
+                <button data-move="-1"></button><button data-move="1"></button></td>`);
+            });
+            initializeProjectSorting();
+            const firstRow = orderBody.children[0];
+            const moveDown = firstRow.querySelector('[data-move="1"]');
+            checks.orderBoundaries = firstRow.querySelector('[data-move="-1"]').disabled
+              && orderBody.children[1].querySelector('[data-move="1"]').disabled;
+            const movement = moveProject(moveDown, 1);
+            await moveProject(moveDown, -1);
+            checks.orderPendingGuard = moveDown.disabled && savedOrders.length === 1
+              && orderBody.getAttribute('aria-busy') === 'true';
+            pendingOrder({ok: true});
+            await movement;
+            checks.orderMoveSaved = savedOrders[0].join() === '3,2'
+              && Array.from(orderBody.children, row => row.dataset.id).join() === '3,2'
+              && firstRow.querySelector('.order-number').textContent === '2';
+            const failure = moveProject(firstRow.querySelector('[data-move="-1"]'), -1);
+            pendingOrder({ok: false});
+            await failure;
+            checks.orderFailureRestores = window.orderError
+              && Array.from(orderBody.children, row => row.dataset.id).join() === '3,2'
+              && firstRow.querySelector('.order-number').textContent === '2'
+              && orderBody.getAttribute('aria-busy') === 'false';
+            const keyEvent = {key: 'ArrowUp', preventDefault: () => { window.orderKeyPrevented = true; }};
+            reorderProjectByKey(keyEvent, firstRow.querySelector('[data-move="-1"]'));
+            pendingOrder({ok: true});
+            await flush();
+            checks.orderKeyboard = window.orderKeyPrevented && savedOrders.at(-1).join() === '2,3'
+              && orderBody.children[0] === firstRow;
             document.getElementById('test-results').textContent = JSON.stringify(checks);
           }
           document.addEventListener('DOMContentLoaded', () => run().catch(error => {

@@ -56,6 +56,10 @@ This project is a testament to the power of modern Agentic AI. Development has b
 - **Real-time**: WebSockets with STOMP & SockJS
 - **Build System**: Maven (Native support for GraalVM)
 
+Frontend CSS is precompiled and JavaScript dependencies are bundled with fixed
+versions. See [Frontend assets](frontend/README.md) to rebuild styles or update
+vendor scripts; normal Maven builds need no Node.js installation.
+
 ---
 
 ## 🏁 Getting Started

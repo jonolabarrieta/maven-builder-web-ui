@@ -1,0 +1,63 @@
+/* Color roles shared by pages, HTMX fragments and generated feedback. */
+:root {
+    --color-text-muted: #4b5563;
+    --color-action: #4f46e5;
+    --color-success: #166534;
+    --color-warning: #92400e;
+    --color-danger: #b91c1c;
+    --color-console-muted: #cbd5e1;
+}
+
+.text-muted { color: var(--color-text-muted); }
+.text-success { color: var(--color-success); }
+.text-warning { color: var(--color-warning); }
+.text-danger { color: var(--color-danger); }
+.text-console-muted { color: var(--color-console-muted); }
+
+:root input::placeholder,
+:root textarea::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+}
+
+:root :is(input:not([type="hidden"]), select, textarea) { border-color: #6b7280; }
+input, textarea { caret-color: var(--color-action); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--color-action); }
+::selection { background: #e0e7ff; color: #312e81; }
+
+.project-skipped { background-color: #f9fafb; }
+
+/* Shared interaction details for pages and asynchronously loaded fragments. */
+:root :is(a, button, summary, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-action);
+    outline-offset: 3px;
+}
+#build-output :focus-visible { outline-color: #a5b4fc; }
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+    border-radius: .5rem;
+}
+html { scrollbar-color: #94a3b8 #f3f4f6; }
+#build-output { scrollbar-color: #475569 #030712; }
+#project-table, #current-pid { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+@media (forced-colors: active) {
+    .text-muted, .text-success, .text-warning, .text-danger, .text-console-muted {
+        color: CanvasText;
+    }
+    :root :focus-visible { outline-color: Highlight; }
+}

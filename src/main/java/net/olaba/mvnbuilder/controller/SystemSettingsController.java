@@ -129,7 +129,7 @@ public class SystemSettingsController {
             model.addAttribute("updateChecked", true);
         } catch (final Exception e) {
             log.error("Failed to check for updates: {}", e.getMessage());
-            model.addAttribute("updateCheckError", "No se pudo comprobar la actualización: " + e.getMessage());
+            model.addAttribute("updateCheckError", "Try again later. If the problem continues, check the application log.");
             model.addAttribute("updateChecked", true);
         }
         return "settings :: updater-card";
@@ -149,12 +149,12 @@ public class SystemSettingsController {
             final Path tempFile = updateService.downloadAsset(downloadUrl);
             updateService.restartAndApplyUpdate(tempFile);
             return "<div class=\"p-4 mb-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl font-medium\">" +
-                   "Actualización descargada con éxito. Reiniciando la aplicación..." +
+                   "Update downloaded. MvnBuilder is restarting to apply it..." +
                    "</div>";
         } catch (final Exception e) {
             log.error("Failed to apply update: {}", e.getMessage());
             return "<div class=\"p-4 mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl font-medium\">" +
-                   "Error al aplicar la actualización: " + e.getMessage() +
+                   "The update could not be installed. Check the application log and try again." +
                    "</div>";
         }
     }

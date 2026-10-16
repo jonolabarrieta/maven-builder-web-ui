@@ -3,11 +3,11 @@
 <body>
     <div th:fragment="directory-explorer-content">
         <div class="px-4 sm:px-6 py-4 border-b border-gray-100 flex justify-between items-center gap-2 bg-gray-50">
-            <div>
-                <h3 class="text-lg font-bold text-gray-800">Directory Explorer</h3>
-                <p class="text-xs text-gray-400 font-mono truncate max-w-[65vw] sm:max-w-xs" th:text="${currentPath}">/path/to/dir</p>
+            <div class="min-w-0">
+                <h3 class="text-lg font-bold text-gray-800">Choose base folder</h3>
+                <p class="text-xs text-muted font-mono truncate max-w-[65vw] sm:max-w-xs" th:text="${currentPath}">/path/to/dir</p>
             </div>
-            <button type="button" onclick="closeDirectoryExplorerModal()" class="text-gray-400 hover:text-gray-600">
+            <button type="button" aria-label="Close Choose base folder" onclick="closeDirectoryExplorerModal()" class="icon-button text-muted hover:text-gray-600">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -29,26 +29,26 @@
             <div class="space-y-1">
                 <!-- Only show directories -->
                 <div th:each="item : ${items}" th:if="${item.directory}" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-all">
-                    <div class="flex items-center space-x-3 flex-grow cursor-pointer" 
+                    <button type="button" class="flex items-center gap-3 flex-grow min-w-0 text-left"
                          th:attr="hx-get=@{/workspaces/explorer(path=${item.path}, targetInputId=${targetInputId})}"
                          hx-target="#directory-explorer-modal-content">
-                        <div class="p-2 bg-amber-50 text-amber-600 rounded-lg group-hover:bg-amber-100 transition-colors">
+                        <div class="p-2 shrink-0 bg-amber-50 text-warning rounded-lg group-hover:bg-amber-100 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                             </svg>
                         </div>
-                        <span class="text-sm font-medium text-gray-700" th:text="${item.name}">folder-name</span>
-                    </div>
+                        <span class="text-sm font-medium text-gray-700 break-all" th:text="${item.name}">folder-name</span>
+                    </button>
                 </div>
                 <!-- If there are no subdirectories -->
-                <div th:if="${items == null or #lists.isEmpty(items) or #lists.isEmpty(items.?[directory])}" class="py-8 text-center text-sm text-gray-400 italic">
+                <div th:if="${items == null or #lists.isEmpty(items) or #lists.isEmpty(items.?[directory])}" class="py-8 text-center text-sm text-muted italic">
                     No subdirectories
                 </div>
             </div>
         </div>
         
         <div class="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-wrap gap-2 justify-between items-center">
-            <span class="text-xs text-gray-400 font-medium truncate max-w-[250px]" th:text="'Selected: ' + ${currentPath}">Selected path</span>
+            <span class="text-xs text-muted font-medium break-all min-w-0 max-w-full" th:text="'Selected: ' + ${currentPath}">Selected path</span>
             <button type="button" th:attr="data-path=${currentPath}, data-target=${targetInputId}"
                     onclick="selectWorkspaceDirectory(this.getAttribute('data-path'), this.getAttribute('data-target'))"
                     class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-bold text-sm">

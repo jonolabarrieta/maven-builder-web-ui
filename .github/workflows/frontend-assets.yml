@@ -1,0 +1,29 @@
+name: Verify frontend assets
+
+on:
+  pull_request:
+    paths:
+      - 'src/main/resources/**'
+      - 'src/main/java/net/olaba/mvnbuilder/controller/**'
+      - 'tailwind.config.cjs'
+      - 'scripts/build-css.py'
+      - '.github/workflows/frontend-assets.yml'
+  push:
+    paths:
+      - 'src/main/resources/**'
+      - 'src/main/java/net/olaba/mvnbuilder/controller/**'
+      - 'tailwind.config.cjs'
+      - 'scripts/build-css.py'
+      - '.github/workflows/frontend-assets.yml'
+
+jobs:
+  stylesheet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: target/frontend-tools
+          key: tailwind-3.4.17-${{ runner.os }}-${{ runner.arch }}
+      - name: Verify committed CSS
+        run: python3 scripts/build-css.py --check

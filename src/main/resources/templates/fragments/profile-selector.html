@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-    <div th:fragment="profile-selector-fragment" id="profile-selector-container" class="flex flex-wrap items-center gap-2 min-w-0">
-        <div class="relative flex flex-wrap items-center gap-2 min-w-0">
-            <span class="text-xs font-bold text-gray-400 uppercase tracking-widest mr-2">Build Profile:</span>
-            <select onchange="activateProfile(this.value)" class="bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block px-3 py-1.5 font-medium shadow-sm outline-none cursor-pointer">
+    <div th:fragment="profile-selector-fragment" id="profile-selector-container" class="flex items-center gap-2 min-w-0 max-w-full w-full sm:w-auto">
+        <div class="relative flex flex-1 items-center gap-2 min-w-0">
+            <label for="active-build-profile" class="text-[10px] font-bold text-muted uppercase tracking-wider shrink-0">Build Profile:</label>
+            <select id="active-build-profile" onchange="activateProfile(this.value)" class="min-w-0 max-w-full w-full sm:w-auto sm:max-w-[14rem] bg-gray-50 border border-gray-200 text-gray-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block px-3 py-1.5 font-medium shadow-sm outline-none cursor-pointer">
                 <option th:each="p : ${profiles}" th:value="${p.id}" th:text="${p.name}" th:selected="${p.isDefault}"></option>
             </select>
         </div>
-        <button onclick="document.getElementById('profile-manager-modal').classList.remove('hidden')" class="text-gray-400 hover:text-indigo-600 transition-colors p-1" title="Manage Profiles">
+        <button onclick="document.getElementById('profile-manager-modal').classList.remove('hidden')" class="icon-button text-muted hover:text-indigo-600 transition-colors p-1" aria-label="Manage Profiles" title="Manage Profiles">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -37,38 +37,51 @@
         <!-- Manage Profiles Modal (OOB Swap to the body container) -->
         <div id="profile-manager-modal-container" hx-swap-oob="true">
             <div id="profile-manager-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
-                <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all flex flex-col max-h-[calc(100dvh-1rem)]">
-                    <div class="px-4 sm:px-8 py-4 sm:py-6 border-b border-gray-100 flex justify-between items-center">
+                <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all flex flex-col max-h-[calc(100dvh-1rem)] overflow-y-auto">
+                    <div class="px-4 sm:px-8 py-4 sm:py-6 border-b border-gray-100 flex justify-between items-center shrink-0">
                         <h3 class="text-xl font-bold text-gray-800">Manage Build Profiles</h3>
-                        <button onclick="document.getElementById('profile-manager-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                        <button type="button" aria-label="Close Manage Build Profiles" onclick="document.getElementById('profile-manager-modal').classList.add('hidden')" class="icon-button text-muted hover:text-gray-600">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
                     </div>
-                    <div class="px-4 sm:px-8 py-4 sm:py-6 border-b border-gray-100 bg-gray-50">
-                        <form hx-post="/settings/profiles/add" hx-target="#profile-selector-container" class="flex flex-wrap gap-3 sm:gap-4">
-                            <input type="text" name="name" required placeholder="Name (e.g. Fast Build)" class="w-full sm:w-auto sm:flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
-                            <input type="text" name="command" required placeholder="Args (e.g. -B clean install -DskipTests)" class="w-full sm:w-auto sm:flex-[2] min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
-                            <input type="text" name="versionProfileId" maxlength="255" aria-label="Maven profile for displayed versions" placeholder="Version profile ID (optional)" class="w-full sm:w-auto sm:flex-1 min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
-                            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all font-semibold shadow-sm whitespace-nowrap">
-                                Add Profile
-                            </button>
+                    <div class="px-4 sm:px-8 py-4 sm:py-6 border-b border-gray-100 bg-gray-50 shrink-0">
+                        <p class="text-sm text-muted mb-4">Build profiles are shared by all workspaces. The active profile supplies the arguments for Maven builds.</p>
+                        <form hx-post="/settings/profiles/add" hx-target="#profile-selector-container" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="min-w-0">
+                                <label for="build-profile-name" class="block text-sm font-semibold text-gray-700 mb-1">Build profile name</label>
+                                <input id="build-profile-name" type="text" name="name" required placeholder="Fast build" class="w-full min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                            </div>
+                            <div class="min-w-0">
+                                <label for="build-profile-arguments" class="block text-sm font-semibold text-gray-700 mb-1">Maven arguments</label>
+                                <input id="build-profile-arguments" type="text" name="command" required aria-describedby="build-profile-arguments-help" placeholder="-B clean install -DskipTests" class="w-full min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                                <p id="build-profile-arguments-help" class="text-xs text-muted mt-1">Enter the arguments after <code>mvn</code>.</p>
+                            </div>
+                            <div class="min-w-0 sm:col-span-2">
+                                <label for="build-profile-version" class="block text-sm font-semibold text-gray-700 mb-1">Version profile ID (optional)</label>
+                                <input id="build-profile-version" type="text" name="versionProfileId" maxlength="255" aria-describedby="build-profile-version-help" placeholder="release" class="w-full min-w-0 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none">
+                                <p id="build-profile-version-help" class="text-xs text-muted mt-1">Read displayed versions from this POM profile; leave blank for the base POM. To activate a Maven profile during builds, include <code>-PprofileId</code> in Maven arguments.</p>
+                            </div>
+                            <button type="submit" class="sm:col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all font-semibold shadow-sm">Add build profile</button>
                         </form>
                     </div>
-                    <div class="p-4 sm:p-8 overflow-y-auto flex-1">
+                    <div class="p-4 sm:p-8 shrink-0">
                         <ul class="divide-y divide-gray-100">
                             <li th:each="p : ${profiles}" class="py-3 flex justify-between items-center gap-2 min-w-0">
                                 <div class="min-w-0 flex-1">
-                                    <span class="font-bold text-gray-800" th:text="${p.name}">Profile Name</span>
-                                    <span th:if="${p.isDefault}" class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Active</span>
-                                    <p class="text-sm text-gray-500 font-mono mt-1 break-all" th:text="'mvn ' + ${p.command}">mvn clean install</p>
+                                    <span class="font-bold text-gray-800 break-all" th:text="${p.name}">Profile Name</span>
+                                    <span th:if="${p.isDefault}" class="ml-2 text-xs bg-green-100 text-success px-2 py-0.5 rounded-full font-bold">Active</span>
+                                    <p class="text-sm text-muted font-mono mt-1 break-all" th:text="'mvn ' + ${p.command}">mvn clean install</p>
                                     <form th:attr="hx-post=@{/settings/profiles/{id}/version-profile(id=${p.id})}" hx-target="#profile-selector-container" class="flex flex-wrap items-center gap-2 mt-2">
-                                        <input type="text" name="versionProfileId" maxlength="255" th:value="${p.versionProfileId}" aria-label="Maven profile for displayed versions" placeholder="Base POM version" class="min-w-0 w-48 px-2 py-1 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
-                                        <button type="submit" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800" title="Save version profile">Save</button>
+                                        <div class="min-w-0 flex-1">
+                                            <label th:for="${'version-profile-' + p.id}" class="block text-xs font-semibold text-muted mb-1">Version profile ID (optional)</label>
+                                            <input th:id="${'version-profile-' + p.id}" type="text" name="versionProfileId" maxlength="255" th:value="${p.versionProfileId}" placeholder="Base POM when blank" class="min-w-0 w-full px-2 py-1 text-xs border border-gray-200 rounded focus:ring-2 focus:ring-indigo-500 outline-none">
+                                        </div>
+                                        <button type="submit" class="self-end text-xs font-semibold text-indigo-600 hover:text-indigo-800" title="Save version profile">Save version profile</button>
                                     </form>
                                 </div>
-                                <button th:if="${!p.isDefault}" th:attr="hx-post=@{/settings/profiles/{id}/delete(id=${p.id})}" hx-target="#profile-selector-container" class="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors" title="Delete Profile">
+                                <button aria-label="Delete Profile" th:if="${!p.isDefault}" th:attr="hx-post=@{/settings/profiles/{id}/delete(id=${p.id})}" hx-target="#profile-selector-container" class="icon-button text-danger hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors" title="Delete Profile">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
