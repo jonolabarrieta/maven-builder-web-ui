@@ -268,14 +268,16 @@ public class WorkspaceController {
     /**
      * Executes bulk actions on selected projects.
      * 
-     * @param id         The workspace ID.
-     * @param projectIds The list of project IDs.
-     * @param action     The action to perform (build, fetch, pull).
+     * @param id               The workspace ID.
+     * @param projectIds       The list of project IDs.
+     * @param action           The action to perform (build, fetch, pull, stash...).
+     * @param includeUntracked For the stash action: whether untracked files are stashed too.
      */
     @PostMapping("/workspaces/{id}/bulk-action")
     @ResponseBody
     public void bulkAction(final @PathVariable Long id, final @RequestParam List<Long> projectIds,
-            final @RequestParam String action) {
+            final @RequestParam String action,
+            final @RequestParam(name = "includeUntracked", defaultValue = "false") boolean includeUntracked) {
         final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
         final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
                 .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
@@ -299,6 +301,9 @@ public class WorkspaceController {
                 break;
             case "restore-staged":
                 buildService.bulkGitUnstage(projects);
+                break;
+            case "stash":
+                buildService.bulkGitStash(projects, includeUntracked);
                 break;
             default:
                 log.warn("Unknown bulk action: {}", action);
@@ -662,15 +667,20 @@ public class WorkspaceController {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         final Workspace workspace = project.getWorkspace();
         final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
-        final List<String> branches = gitService.listBranches(projectDir);
-        final List<String> remoteBranches = gitService.listRemoteBranches(projectDir);
-        final List<String> tags = gitService.listTags(projectDir);
+        final var branches = gitService.listReferences(projectDir, GitService.ReferenceType.LOCAL);
+        final var remoteBranches = gitService.listReferences(projectDir, GitService.ReferenceType.REMOTE);
+        final var tags = gitService.listReferences(projectDir, GitService.ReferenceType.TAG);
 
         model.addAttribute("project", project);
         model.addAttribute("branches", branches);
         model.addAttribute("remoteBranches", remoteBranches);
         model.addAttribute("tags", tags);
-        model.addAttribute("currentBranch", project.getGitBranch());
+        try {
+            model.addAttribute("currentReference", gitService.getCurrentReference(projectDir));
+        } catch (final IllegalStateException e) {
+            log.warn("Cannot identify current Git reference: {}", e.getMessage());
+            model.addAttribute("currentReference", null);
+        }
         return "fragments/branch-selector :: branch-list";
     }
 
@@ -698,25 +708,31 @@ public class WorkspaceController {
     }
 
     /**
-     * Switches a project to a specific Git branch.
+     * Switches a project to a typed Git reference (legacy untyped requests are local-only).
      * 
      * @param id     The project ID.
      * @param branch The branch name.
+     * @param referenceType LOCAL, REMOTE, or TAG; omitted for legacy local checkout.
      * @return A success or error response.
      */
     @PostMapping("/projects/{id}/checkout")
     @ResponseBody
-    public ResponseEntity<String> checkoutBranch(final @PathVariable Long id, final @RequestParam String branch) {
+    public ResponseEntity<String> checkoutBranch(final @PathVariable Long id, final @RequestParam String branch,
+            final @RequestParam(required = false) String referenceType) {
         log.info("Request to checkout branch '{}' for project ID {}", branch, id);
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         final Workspace workspace = project.getWorkspace();
         final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
 
         try {
-            gitService.checkoutBranch(projectDir, branch);
-            project.setGitBranch(branch);
+            final var current = gitService.checkoutReference(projectDir, branch, referenceType);
+            project.setGitBranch(current.getLabel());
             mavenProjectRepository.save(project);
             return ResponseEntity.ok("Success");
+        } catch (final IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (final GitService.ReferenceConflictException e) {
+            return ResponseEntity.status(409).body(e.getMessage());
         } catch (final Exception e) {
             log.error("Failed to checkout branch: {}", e.getMessage());
             return ResponseEntity.internalServerError().body(e.getMessage());
