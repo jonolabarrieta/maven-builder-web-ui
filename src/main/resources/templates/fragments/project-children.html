@@ -38,10 +38,10 @@
                 <div th:each="child : ${children}" class="p-4 hover:bg-gray-50 transition-colors group">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="flex items-center space-x-3 min-w-0">
-                            <div class="w-8 h-8 shrink-0 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xs" th:text="${child.artifactId.substring(0,1).toUpperCase()}">A</div>
+                            <div class="w-8 h-8 shrink-0 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xs" th:text="${child.displayName.substring(0,1).toUpperCase()}">A</div>
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-sm font-bold text-gray-800 break-all" th:text="${child.artifactId}">artifact-id</span>
+                                    <span class="text-sm font-bold text-gray-800 break-all" th:text="${child.displayName}">artifact-id</span>
                                     <span class="px-1.5 py-0.5 bg-gray-100 text-muted rounded text-[9px] font-bold border border-gray-200" th:text="${child.version}">1.0.0</span>
                                 </div>
                                 <div class="text-[10px] text-muted font-mono break-all" th:text="${child.groupId}">group.id</div>
@@ -57,7 +57,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                                 </svg>
                             </button>
-                            <button th:attr="hx-get=@{/projects/{id}/properties(id=${child.id})}"
+                            <button th:if="${child.maven}" th:attr="hx-get=@{/projects/{id}/properties(id=${child.id})}"
                                     hx-target="#project-properties-modal-content"
                                     hx-trigger="click"
                                     onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
@@ -66,7 +66,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                             </button>
-                            <button th:attr="hx-post=@{/projects/{id}/build(id=${child.id})}" class="icon-button p-1.5 text-success hover:bg-green-50 rounded-md transition-all" title="Build Submodule">
+                            <button th:if="${child.maven}" th:attr="hx-post=@{/projects/{id}/build(id=${child.id})}" class="icon-button p-1.5 text-success hover:bg-green-50 rounded-md transition-all" title="Build Submodule">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                 </svg>

@@ -5,6 +5,9 @@ import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Launches local desktop applications at a validated project directory.
@@ -46,7 +49,13 @@ public class DesktopLauncherService {
         IOException lastError = null;
         for (final List<String> command : terminalCommands(currentOs(), projectDirectory.getAbsolutePath())) {
             try {
-                new ProcessBuilder(command).start();
+                Process process = launch(command, projectDirectory);
+                if (isWindows(currentOs())) {
+                    try {
+                        if (!process.waitFor(10, TimeUnit.SECONDS)) { process.destroyForcibly(); throw new IOException("PowerShell launcher timed out. Check the project directory and PowerShell installation."); }
+                        if (process.exitValue() != 0) throw new IOException("PowerShell could not open the terminal: " + new String(process.getInputStream().readNBytes(8192), StandardCharsets.UTF_8));
+                    } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IOException("PowerShell launch interrupted.", e); }
+                }
                 return;
             } catch (final IOException error) {
                 lastError = error;
@@ -54,6 +63,10 @@ public class DesktopLauncherService {
         }
 
         throw new IOException("No supported terminal launcher is available for this system.", lastError);
+    }
+
+    protected Process launch(List<String> command, File directory) throws IOException {
+        return new ProcessBuilder(command).directory(directory).redirectErrorStream(true).start();
     }
 
     /**
@@ -96,13 +109,22 @@ public class DesktopLauncherService {
      */
     List<List<String>> terminalCommands(final String os, final String path) {
         if (isWindows(os)) {
-            return List.of(List.of("cmd.exe", "/c", "start", "", "cmd.exe", "/K", "cd", "/d", path));
+            String literal = "'" + path.replace("'", "''") + "'";
+            String location = encoded("Set-Location -LiteralPath " + literal);
+            String script = "$ErrorActionPreference='Stop'; "
+                    + "$shell=Get-Command pwsh.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; "
+                    + "if (!$shell) { $shell=Get-Command powershell.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1 }; "
+                    + "Start-Process -FilePath $shell.Source -WorkingDirectory " + literal
+                    + " -ArgumentList @('-NoExit','-NoProfile','-EncodedCommand','" + location + "') -ErrorAction Stop";
+            String command = encoded(script);
+            return List.of(List.of("pwsh.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", command),
+                    List.of("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", command));
         }
         if (isMac(os)) {
             return List.of(List.of("open", "-a", "Terminal", path));
         }
         return List.of(
-                List.of("xdg-terminal-exec", "--working-directory", path),
+                List.of("xdg-terminal-exec", "--dir=" + path),
                 List.of("gnome-terminal", "--working-directory=" + path),
                 List.of("konsole", "--workdir", path),
                 List.of("xfce4-terminal", "--working-directory=" + path));
@@ -113,8 +135,12 @@ public class DesktopLauncherService {
      *
      * @return normalized operating system name
      */
-    private String currentOs() {
+    protected String currentOs() {
         return System.getProperty("os.name", "").toLowerCase();
+    }
+
+    private String encoded(String script) {
+        return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_16LE));
     }
 
     /**

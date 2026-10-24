@@ -30,7 +30,14 @@
         #log-tabs::-webkit-scrollbar-thumb:hover { background: #6366f1; }
         #project-table-body td { vertical-align: top; }
         #build-output { height: 220px; min-height: 150px; resize: vertical; }
+        #build-output:has(#retry-container:not(.hidden)) { min-height: 360px; }
+        #log-containers { min-height: 0; }
         @media (max-width: 767px) { #build-output { height: 150px; } }
+        @media (max-width: 767px) {
+            .build-recovery-actions { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
+            #skip-failed-button, #retry-button { grid-column: 1; justify-content: center; }
+            #retry-dismiss { grid-column: 2; grid-row: 1; align-self: start; }
+        }
     </style>
 </head>
 <body class="text-gray-900">
@@ -65,7 +72,7 @@
             <div hx-get="/settings/profiles/selector" hx-trigger="load" hx-swap="outerHTML">
                 <div class="animate-pulse bg-gray-200 h-10 w-40 rounded-lg"></div>
             </div>
-            <button th:attr="hx-post=@{/workspaces/{id}/build-all(id=${workspace.id})}" hx-swap="none" onclick="clearLogs()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 text-sm">
+            <button th:attr="hx-post=@{/workspaces/{id}/build-all(id=${workspace.id})}" hx-swap="none" onclick="clearLogs(); window.BuildRecovery.reset()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors font-semibold flex items-center gap-2 text-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -171,7 +178,7 @@
                     <div class="flex items-center gap-1 sm:gap-3">
                         <div id="process-info" class="hidden flex items-center space-x-3 bg-gray-700/50 px-3 py-1 rounded-full border border-gray-600">
                             <span class="text-[10px] font-bold text-console-muted uppercase tracking-widest">PID: <span id="current-pid" class="text-indigo-400">0</span></span>
-                            <button hx-post="/build/kill" hx-swap="none" class="text-red-400 hover:text-red-300 transition-colors flex items-center space-x-1 group/kill">
+                            <button hx-post="/build/kill" hx-swap="none" onclick="window.BuildRecovery.reset()" class="text-red-400 hover:text-red-300 transition-colors flex items-center space-x-1 group/kill">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
@@ -220,7 +227,7 @@
                 </div>
             </div>
 
-            <div id="retry-container" class="hidden bg-red-900/60 backdrop-blur-md border-t border-red-800/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div id="retry-container" role="status" aria-live="polite" class="hidden bg-red-900/60 backdrop-blur-md border-t border-red-800/50 px-4 py-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
                 <div class="flex items-center space-x-3">
                     <div class="bg-red-500/20 p-1.5 rounded-lg border border-red-500/30">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -229,14 +236,15 @@
                     </div>
                     <span class="text-sm font-medium text-red-100">Build failed at project: <span id="failed-project-name" class="font-bold text-white underline decoration-red-500 decoration-2 underline-offset-4"></span></span>
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="build-recovery-actions flex items-center gap-2">
+                    <button id="skip-failed-button" type="button" class="bg-white/10 hover:bg-white/20 text-white border border-red-300 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">Skip and continue</button>
                     <button id="retry-button" class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-xl transition-all shadow-lg shadow-red-900/40 text-xs font-bold uppercase tracking-widest flex items-center group">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 mr-2 group-hover:rotate-180 transition-transform duration-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Retry from here
                     </button>
-                    <button onclick="document.getElementById('retry-container').classList.add('hidden')" class="text-red-300 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-all" title="Dismiss">
+                    <button id="retry-dismiss" onclick="document.getElementById('retry-container').classList.add('hidden')" class="text-red-300 hover:text-white p-2 hover:bg-white/10 rounded-lg transition-all" title="Dismiss">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                         </svg>
@@ -289,7 +297,7 @@
                             th:attr="data-id=${project.id}"
                             th:id="'project-row-' + ${project.id}">
                             <td class="px-6 py-4">
-                                <label class="project-selection"><input type="checkbox" name="project-checkbox" th:value="${project.id}" th:aria-label="'Select project ' + ${project.artifactId}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
+                                <label class="project-selection"><input type="checkbox" name="project-checkbox" th:value="${project.id}" th:aria-label="'Select project ' + ${project.displayName}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
                             </td>
                             <td class="px-6 py-4">
                                 <button th:attr="hx-post=@{/projects/{id}/toggle-enabled(id=${project.id})}"
@@ -305,28 +313,30 @@
                                 </button>
                             </td>
                             <td class="px-6 py-4 flex items-center gap-1">
-                                <button type="button" class="project-order-handle icon-button cursor-grab text-muted hover:bg-gray-100" th:aria-label="${'Reorder ' + project.artifactId + ': use Arrow Up or Arrow Down'}" onkeydown="reorderProjectByKey(event, this)">
+                                <button type="button" class="project-order-handle icon-button cursor-grab text-muted hover:bg-gray-100" th:aria-label="${'Reorder ' + project.displayName + ': use Arrow Up or Arrow Down'}" onkeydown="reorderProjectByKey(event, this)">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
                                 </svg>
                                 </button>
                                 <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-muted" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
                                 <div class="project-order-buttons">
-                                    <button type="button" onclick="moveProject(this, -1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.artifactId + ' up'}" data-move="-1">
+                                    <button type="button" onclick="moveProject(this, -1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' up'}" data-move="-1">
                                         <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
                                     </button>
-                                    <button type="button" onclick="moveProject(this, 1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.artifactId + ' down'}" data-move="1">
+                                    <button type="button" onclick="moveProject(this, 1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' down'}" data-move="1">
                                         <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 9l7 7 7-7" /></svg>
                                     </button>
                                 </div>
                             </td>
                             <td class="px-6 py-4">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <div class="font-bold text-gray-800" th:text="${project.artifactId}">artifact-id</div>
+                                    <div class="font-bold text-gray-800" th:text="${project.displayName}">artifact-id</div>
+                                    <span th:if="${!project.maven}" class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">Folder</span>
+                                    <span th:if="${!project.maven and !project.available}" class="text-xs text-danger">Directory unavailable</span>
                                     <span class="project-state whitespace-nowrap text-xs font-medium text-muted" th:classappend="${project.enabled ? 'hidden' : ''}">Skipped</span>
-                                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:text="${project.version}">1.0.0</span>
+                                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold border border-indigo-100" th:if="${project.maven}" th:text="${project.version}">1.0.0</span>
                                 </div>
-                                <div class="text-xs text-muted font-mono" th:text="${project.groupId}">group.id</div>
+                                <div class="text-xs text-muted font-mono" th:if="${project.maven}" th:text="${project.groupId}">group.id</div>
                                 <div class="mt-1 flex items-center space-x-1.5">
                                     <button onclick="copyToClipboard(this)" 
                                             th:attr="data-path=${project.absolutePath}" 
@@ -379,7 +389,7 @@
                                             </svg>
                                             <span>Pull</span>
                                         </button>
-                                        <details class="relative group/build">
+                                        <details th:if="${project.maven}" class="relative group/build">
                                             <summary class="list-none cursor-pointer flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-white bg-green-700 rounded-lg hover:bg-green-800 transition-all shadow-md" title="Choose Maven build range">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -423,7 +433,7 @@
                                                     </svg>
                                                         <span>Open terminal</span>
                                                 </button>
-                                                <button th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
+                                                <button th:if="${project.maven}" th:attr="hx-get=@{/projects/{id}/properties(id=${project.id})}"
                                                         hx-target="#project-properties-modal-content"
                                                         hx-trigger="click"
                                                         onclick="document.getElementById('project-properties-modal').classList.remove('hidden')"
@@ -433,7 +443,7 @@
                                                     </svg>
                                                         <span>Project properties</span>
                                                 </button>
-                                                <button th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
+                                                <button th:if="${project.maven}" th:attr="hx-get=@{/projects/{id}/m2(id=${project.id})}"
                                                         hx-target="#m2-modal-content"
                                                         hx-trigger="click"
                                                         onclick="document.getElementById('m2-modal').classList.remove('hidden')"
@@ -714,8 +724,10 @@
         </aside>
     </div>
 
+    <script th:src="@{/js/build-recovery.js}"></script>
     <script th:inline="javascript">
         const workspaceId = [[${workspace.id}]];
+        window.BuildRecovery.init({ workspaceId, onError: (error) => showRequestError('Unable to continue build', error, 'Review the workspace and try again.'), onEmpty: (message) => ConfirmationModal.info({title: 'No remaining projects', message}) });
         let socket;
         let stompClient;
 
@@ -757,17 +769,7 @@
         }, { once: true });
 
         function showRetryButton(failure) {
-            const retryContainer = document.getElementById('retry-container');
-            const failedProjectSpan = document.getElementById('failed-project-name');
-            const retryButton = document.getElementById('retry-button');
-            
-            failedProjectSpan.innerText = failure.projectName;
-            retryContainer.classList.remove('hidden');
-            
-            retryButton.onclick = function() {
-                retryContainer.classList.add('hidden');
-                executeBulkAction('build', failure.remainingProjectIds);
-            };
+            window.BuildRecovery.show(failure);
         }
 
         function showActionSummary(summary) {
@@ -779,6 +781,7 @@
             toast.id = toastId;
             toast.className = 'glass relative bg-white/95 border border-gray-100 rounded-2xl shadow-2xl p-5 flex flex-col space-y-3 max-h-[calc(100dvh-2rem)] overflow-y-auto transition-all duration-500 ease-out transform translate-x-full opacity-0';
             
+            if (summary.workspaceId != null && Number(summary.workspaceId) !== Number(workspaceId)) return;
             const isBuild = summary.action === 'build';
             const gitActionTitle = {
                 'git-fetch': 'Git Fetch',
@@ -856,6 +859,7 @@
                 }
             }
 
+            if (summary.skippedProjects?.length) contentHtml += `<p class="text-sm text-amber-800">Skipped: ${summary.skippedProjects.map(escapeHtml).join(', ')}. The original failure remains in build history.</p>`;
             toast.innerHTML = `
                 <button type="button" aria-label="Dismiss action summary" onclick="closeToast('${toastId}')" class="icon-button absolute top-2 right-2 text-muted hover:text-gray-600 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1001,6 +1005,7 @@
                 card.appendChild(message);
             }
 
+            appendNotificationChips(card, 'Skipped', item.skippedProjects, '#fffbeb', '#92400e', '#fde68a');
             appendNotificationChips(card, 'Failed', item.failedProjects, '#fef2f2', '#b91c1c', '#fecaca');
             appendNotificationChips(card, 'Succeeded', item.succeededProjects, '#f0fdf4', '#166534', '#bbf7d0');
             appendNotificationChips(card, 'Updated', item.changedProjects, '#eef2ff', '#4338ca', '#c7d2fe');
@@ -1336,6 +1341,7 @@
 
         function startRangeBuild(button) {
             clearLogs();
+            window.BuildRecovery.reset();
             button.closest('details').removeAttribute('open');
         }
 
@@ -1716,7 +1722,7 @@
 
             if (action === 'build') {
                 clearLogs();
-                document.getElementById('retry-container').classList.add('hidden');
+                window.BuildRecovery.reset();
             }
 
             _executeBulkActionRequest(action, selectedIds);
@@ -1725,7 +1731,7 @@
         function _executeBulkActionRequest(action, selectedIds, options = null) {
             if (action === 'build') {
                 clearLogs();
-                document.getElementById('retry-container').classList.add('hidden');
+                window.BuildRecovery.reset();
             }
 
             const formData = new FormData();
@@ -1759,6 +1765,7 @@
 
             const formData = new FormData();
             paths.forEach(path => formData.append('paths', path));
+            formData.append('includeNonMaven', document.getElementById('include-non-maven')?.checked || false);
 
             fetch(`/workspaces/${workspaceId}/explorer/add`, {
                 method: 'POST',
@@ -1774,6 +1781,7 @@
             if (!path) return;
             const formData = new FormData();
             formData.append('paths', path);
+            formData.append('includeNonMaven', document.getElementById('include-non-maven')?.checked || false);
 
             fetch(`/workspaces/${workspaceId}/explorer/add`, {
                 method: 'POST',

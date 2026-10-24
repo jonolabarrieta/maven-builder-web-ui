@@ -30,6 +30,8 @@ MvnBuilder is a robust administrative dashboard designed to manage complex Maven
 
 Choose **Git** in a workspace to review every repository below its base folder, including non-Maven projects. Compare staged and unstaged files, stage or unstage selected lines/blocks, commit chosen file subsets in one or several repositories, and run fetch, pull, push, stash, or confirmed discard actions. File lists can be collapsed and selected repositories can be pushed together. See [Workspace Git guide](docs/workspace-git.md) for comparisons, operation boundaries, configuration, and verification.
 
+Use **Add Project → Include non-Maven folders** to register other project directories explicitly. Windows terminal shortcuts open PowerShell. After a sequential build failure, **Skip and continue** resumes the pending projects without disabling the failed project. See [Manual projects and build recovery](docs/manual-projects-and-build-recovery.md) for behavior and verification limits.
+
 ### 📱 Responsive Design
 MvnBuilder adapts to desktop, tablet, and mobile screens.
 

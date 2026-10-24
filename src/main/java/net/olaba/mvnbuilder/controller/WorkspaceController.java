@@ -278,10 +278,15 @@ public class WorkspaceController {
     public void bulkAction(final @PathVariable Long id, final @RequestParam List<Long> projectIds,
             final @RequestParam String action,
             final @RequestParam(name = "includeUntracked", defaultValue = "false") boolean includeUntracked) {
+        if (!java.util.Set.of("build", "fetch", "pull", "checkout-discard", "restore-staged", "stash").contains(action)) {
+            log.warn("Unknown bulk action: {}", action); return;
+        }
         final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
         final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
                 .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
-        final List<MavenProject> projects = projectIds.stream()
+        if (projectIds.stream().anyMatch(projectId -> !projectMap.containsKey(projectId) || projectMap.get(projectId).getWorkspace() == null || !id.equals(projectMap.get(projectId).getWorkspace().getId())))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Every project must belong to this workspace.");
+        final List<MavenProject> projects = projectIds.stream().distinct()
                 .map(projectMap::get)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toList());
@@ -322,6 +327,7 @@ public class WorkspaceController {
         final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(id, true);
         final StringBuilder sb = new StringBuilder();
         for (final MavenProject project : projects) {
+            if (!project.isMaven()) continue;
             sb.append(project.getArtifactId()).append("\n");
         }
         return ResponseEntity.ok()
@@ -387,6 +393,7 @@ public class WorkspaceController {
         try {
             final String content = new String(file.getBytes(), java.nio.charset.StandardCharsets.UTF_8);
             final Workspace ws = workspaceService.importWorkspace(content);
+            if (!ws.getImportWarnings().isEmpty()) redirectAttributes.addFlashAttribute("errorMessage", String.join("; ", ws.getImportWarnings()));
             return "redirect:/workspaces/" + ws.getId();
         } catch (final Exception e) {
             log.error("Failed to import workspace: {}", e.getMessage(), e);
@@ -465,6 +472,7 @@ public class WorkspaceController {
     @ResponseBody
     public void buildProject(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        requireMaven(project);
         buildService.buildProject(project);
     }
 
@@ -499,6 +507,7 @@ public class WorkspaceController {
     public ResponseEntity<String> openVsCode(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         final File projectDirectory = projectDirectory(project);
+        if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         final String absolutePath = projectDirectory.getAbsolutePath();
         log.info("Opening project '{}' in VSCode (path: {})", project.getArtifactId(), absolutePath);
         try {
@@ -521,6 +530,7 @@ public class WorkspaceController {
     public ResponseEntity<String> openExplorer(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         final File projectDirectory = projectDirectory(project);
+        if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         final String absolutePath = projectDirectory.getAbsolutePath();
         log.info("Opening project '{}' in File Explorer (path: {})", project.getArtifactId(), absolutePath);
         try {
@@ -543,6 +553,7 @@ public class WorkspaceController {
     public ResponseEntity<String> openTerminal(final @PathVariable Long id) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
         final File projectDirectory = projectDirectory(project);
+        if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         try {
             desktopLauncherService.openTerminal(projectDirectory);
             return ResponseEntity.ok("Opening terminal...");
@@ -775,6 +786,7 @@ public class WorkspaceController {
     @GetMapping("/projects/{id}/m2")
     public String getM2Info(final @PathVariable Long id, final Model model) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        requireMaven(project);
         final M2ProjectInfo m2Info = mavenRepositoryService.getProjectInfo(project.getId(), project.getGroupId(),
                 project.getArtifactId());
 
@@ -804,6 +816,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/m2/delete-version")
     public String deleteM2Version(final @PathVariable Long id, final @RequestParam String version, final Model model) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        requireMaven(project);
         log.info("Deleting M2 version {} for project {}", version, project.getArtifactId());
 
         // Delete for project
@@ -832,6 +845,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/m2/delete-all")
     public String deleteM2Project(final @PathVariable Long id, final Model model) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        requireMaven(project);
         log.info("Deleting ALL M2 versions for project {}", project.getArtifactId());
 
         // Delete for project
@@ -889,13 +903,14 @@ public class WorkspaceController {
      */
     @GetMapping("/workspaces/{id}/explorer")
     public String showExplorer(final @PathVariable Long id, final @RequestParam(required = false) String path,
-            final Model model) {
+            final @RequestParam(defaultValue = "false") boolean includeNonMaven, final Model model) {
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         final String currentPath = (path == null || path.isEmpty()) ? workspace.getBasePath() : path;
 
         final List<FileSystemService.FileItem> items = fileSystemService.listDirectory(currentPath);
         final File currentDir = new File(currentPath);
 
+        model.addAttribute("includeNonMaven", includeNonMaven);
         model.addAttribute("workspace", workspace);
         model.addAttribute("items", items);
         model.addAttribute("currentPath", currentPath);
@@ -940,11 +955,25 @@ public class WorkspaceController {
      */
     @PostMapping("/workspaces/{id}/explorer/add")
     @ResponseBody
-    public ResponseEntity<String> addProjects(final @PathVariable Long id, final @RequestParam List<String> paths) {
-        for (final String path : paths) {
-            workspaceService.addProjectByPath(id, path);
-        }
-        return ResponseEntity.ok("Projects added");
+    public ResponseEntity<String> addProjects(final @PathVariable Long id, final @RequestParam List<String> paths,
+            final @RequestParam(defaultValue = "false") boolean includeNonMaven) {
+        try {
+            for (String path : paths) workspaceService.addProjectByPath(id, path, includeNonMaven);
+            return ResponseEntity.ok("Projects added");
+        } catch (IllegalArgumentException error) { return ResponseEntity.badRequest().body(error.getMessage()); }
+    }
+
+    private void requireMaven(MavenProject project) {
+        if (!project.isMaven()) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "This operation requires a Maven project.");
+    }
+
+    @PostMapping("/workspaces/{id}/build-continuations/{continuationId}")
+    @ResponseBody
+    public ResponseEntity<BuildService.ContinuationResult> continueBuild(final @PathVariable Long id,
+            final @PathVariable String continuationId, final @RequestParam String mode) {
+        var result = buildService.continueBuild(id, continuationId, mode);
+        return ResponseEntity.accepted().body(result);
     }
 
     public static class KeyPropertyInfo {
@@ -996,6 +1025,7 @@ public class WorkspaceController {
     @GetMapping("/projects/{id}/properties")
     public String getProjectProperties(final @PathVariable Long id, final Model model) {
         final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        requireMaven(project);
         final java.util.Properties projectProps = mavenService.getProjectProperties(project);
         final java.util.Properties parentProps = project.getParentKey() != null 
                 ? mavenService.getParentPomProperties(project) 

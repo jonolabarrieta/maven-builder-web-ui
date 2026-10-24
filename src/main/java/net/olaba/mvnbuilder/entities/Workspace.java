@@ -20,6 +20,9 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Workspace {
+    @Transient
+    @Builder.Default
+    private List<String> importWarnings = new ArrayList<>();
     /** Unique identifier for the workspace. */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

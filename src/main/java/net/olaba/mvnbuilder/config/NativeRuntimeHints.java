@@ -52,6 +52,8 @@ public class NativeRuntimeHints {
          */
         @Override
         public void registerHints(final RuntimeHints hints, final ClassLoader classLoader) {
+            hints.reflection().registerType(net.olaba.mvnbuilder.entities.ProjectKind.class, MemberCategory.INVOKE_PUBLIC_METHODS);
+            hints.reflection().registerType(net.olaba.mvnbuilder.service.BuildService.ContinuationResult.class, MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS, MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(net.olaba.mvnbuilder.service.GitService.ReferenceChoice.class,
                     MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(net.olaba.mvnbuilder.service.GitService.ReferenceState.class,

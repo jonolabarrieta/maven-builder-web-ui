@@ -1,6 +1,7 @@
 package net.olaba.mvnbuilder.service;
 
 import net.olaba.mvnbuilder.entities.MavenProject;
+import net.olaba.mvnbuilder.entities.ProjectKind;
 import net.olaba.mvnbuilder.entities.Workspace;
 import net.olaba.mvnbuilder.model.WorkspaceProjectHierarchy;
 import net.olaba.mvnbuilder.repository.MavenProjectRepository;
@@ -42,6 +43,7 @@ public class WorkspaceService {
     public void refreshDisplayedVersions(final String versionProfileId) {
         final List<MavenProject> changed = new ArrayList<>();
         for (final MavenProject project : mavenProjectRepository.findAll()) {
+            if (!project.isMaven()) continue;
             if (project.getAbsolutePath() == null) {
                 continue;
             }
@@ -172,6 +174,7 @@ public class WorkspaceService {
         final List<MavenProject> projects = mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(id);
         for (final MavenProject originalProject : projects) {
             MavenProject projectCopy = MavenProject.builder()
+                    .withProjectKind(originalProject.getProjectKind())
                     .withArtifactId(originalProject.getArtifactId())
                     .withGroupId(originalProject.getGroupId())
                     .withVersion(originalProject.getVersion())
@@ -205,7 +208,7 @@ public class WorkspaceService {
                 .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
 
         // Add the project's relativePath to the workspace exclusion list
-        if (!workspace.getExcludedPaths().contains(project.getRelativePath())) {
+        if (project.isMaven() && !workspace.getExcludedPaths().contains(project.getRelativePath())) {
             workspace.getExcludedPaths().add(project.getRelativePath());
             workspaceRepository.save(workspace);
         }
@@ -249,8 +252,18 @@ public class WorkspaceService {
                 .findByWorkspaceIdOrderByExecutionOrderAsc(workspace.getId());
         final java.util.Map<String, MavenProject> existingMap = existingProjects.stream()
                 .collect(Collectors.toMap(MavenProject::getRelativePath, p -> p));
+        final Map<String, MavenProject> existingDirectories = new HashMap<>();
+        for (MavenProject project : existingProjects) if (project.getAbsolutePath() != null)
+            existingDirectories.put(canonical(new File(project.getAbsolutePath())), project);
 
         final List<MavenProject> projectsToSave = new ArrayList<>();
+
+        for (MavenProject folder : existingProjects) {
+            if (!folder.isMaven()) {
+                if (folder.isAvailable()) folder.setGitBranch(gitService.getCurrentBranch(new File(folder.getAbsolutePath())));
+                projectsToSave.add(folder);
+            }
+        }
 
         for (final File pomFile : pomFiles) {
             // Calculate relative path of this pom
@@ -272,7 +285,8 @@ public class WorkspaceService {
 
             if (!excluded) {
                 final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
-                final MavenProject existing = existingMap.get(projectData.getRelativePath());
+                final MavenProject existing = existingMap.getOrDefault(projectData.getRelativePath(), existingDirectories.get(canonical(pomFile.getParentFile())));
+                if (existing != null && !existing.isMaven()) continue;
 
                 final MavenProject projectToSave;
                 if (existing != null) {
@@ -308,6 +322,7 @@ public class WorkspaceService {
         }
 
         final List<MavenProject> externalParents = summarizeHierarchy(existingProjects).topLevelProjects().stream()
+                .filter(MavenProject::isMaven)
                 .filter(p -> {
                     if (p.getAbsolutePath() == null) {
                         return false;
@@ -328,7 +343,8 @@ public class WorkspaceService {
                 findPomFiles(extDir, extPomFiles);
                 for (final File pomFile : extPomFiles) {
                     final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
-                    final MavenProject existing = existingMap.get(projectData.getRelativePath());
+                    final MavenProject existing = existingMap.getOrDefault(projectData.getRelativePath(), existingDirectories.get(canonical(pomFile.getParentFile())));
+                    if (existing != null && !existing.isMaven()) continue;
 
                     final MavenProject projectToSave;
                     if (existing != null) {
@@ -367,59 +383,67 @@ public class WorkspaceService {
      * @param workspaceId The workspace ID.
      * @param projectPath The directory path containing a pom.xml.
      */
+    @Transactional
     public void addProjectByPath(final Long workspaceId, final String projectPath) {
-        final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
-        final File projectDir = new File(projectPath);
-        if (!projectDir.exists() || !projectDir.isDirectory()) {
-            return;
-        }
-        final List<File> pomFiles = new ArrayList<>();
-        findPomFiles(projectDir, pomFiles);
-        final String versionProfileId = activeVersionProfileId();
-
-        // Load existing projects for the workspace first in a single query
-        final List<MavenProject> existingProjects = mavenProjectRepository
-                .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
-        final java.util.Map<String, MavenProject> existingMap = existingProjects.stream()
-                .collect(Collectors.toMap(MavenProject::getRelativePath, p -> p));
-
-        final List<MavenProject> projectsToSave = new ArrayList<>();
-        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
-
-        for (final File pomFile : pomFiles) {
-            final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
-            final MavenProject existing = existingMap.get(projectData.getRelativePath());
-
-            final MavenProject projectToSave;
-            if (existing != null) {
-                projectToSave = existing;
-                projectToSave.setArtifactId(projectData.getArtifactId());
-                projectToSave.setGroupId(projectData.getGroupId());
-                projectToSave.setVersion(projectData.getVersion());
-                projectToSave.setModules(projectData.getModules());
-                projectToSave.setInternalDependencies(projectData.getInternalDependencies());
-                projectToSave.setAbsolutePath(projectData.getAbsolutePath());
-                projectToSave.setParentKey(projectData.getParentKey());
-            } else {
-                projectToSave = projectData;
-                projectToSave.setWorkspace(workspace);
-            }
-
-            final File gitDir = pomFile.getParentFile();
-            final File gitRoot = findGitRoot(gitDir);
-            final File cacheKey = gitRoot != null ? gitRoot : gitDir;
-
-            final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
-            projectToSave.setGitBranch(branch);
-            projectsToSave.add(projectToSave);
-        }
-
-        if (!projectsToSave.isEmpty()) {
-            mavenProjectRepository.saveAll(projectsToSave);
-        }
+        addProjectByPath(workspaceId, projectPath, false);
     }
 
+    @Transactional
+    public void addProjectByPath(final Long workspaceId, final String projectPath, final boolean includeNonMaven) {
+        final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
+        final File directory = validatedDirectory(projectPath);
+        final List<MavenProject> existing = mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
+        final Map<String, MavenProject> byDirectory = new HashMap<>();
+        for (MavenProject project : existing) if (project.getAbsolutePath() != null)
+            byDirectory.put(canonical(new File(project.getAbsolutePath())), project);
+        final List<File> poms = new ArrayList<>();
+        boolean folder = includeNonMaven && !new File(directory, "pom.xml").isFile();
+        if (!folder) findPomFiles(directory, poms);
+        if (!folder && poms.isEmpty()) throw new IllegalArgumentException("No Maven projects found. Enable Include non-Maven folders to add this directory.");
+        final List<MavenProject> saved = new ArrayList<>();
+        int nextOrder = existing.stream().map(MavenProject::getExecutionOrder).filter(java.util.Objects::nonNull).max(Integer::compare).orElse(-1) + 1;
+        List<File> directories = folder ? List.of(directory) : poms.stream().map(File::getParentFile).toList();
+        for (File entry : directories) {
+            String key = canonical(entry);
+            MavenProject previous = byDirectory.get(key);
+            if (folder && previous != null) continue;
+            MavenProject data = folder ? folderProject(workspace, entry) : mavenService.parsePom(new File(entry, "pom.xml"), workspace.getBasePath(), activeVersionProfileId());
+            MavenProject project = previous == null ? data : previous;
+            if (previous != null) {
+                project.setProjectKind(ProjectKind.MAVEN);
+                project.setArtifactId(data.getArtifactId()); project.setGroupId(data.getGroupId()); project.setVersion(data.getVersion());
+                project.setParentKey(data.getParentKey()); project.setModules(data.getModules()); project.setInternalDependencies(data.getInternalDependencies());
+                project.setAbsolutePath(data.getAbsolutePath()); project.setRelativePath(data.getRelativePath());
+            } else { project.setWorkspace(workspace); project.setExecutionOrder(nextOrder++); }
+            project.setGitBranch(gitService.getCurrentBranch(entry));
+            saved.add(project); byDirectory.put(key, project);
+        }
+        if (!saved.isEmpty()) mavenProjectRepository.saveAll(saved);
+    }
 
+    private File validatedDirectory(String path) {
+        if (path == null || path.isBlank()) throw new IllegalArgumentException("Choose an existing project directory.");
+        File directory = new File(canonical(new File(path)));
+        if (!directory.isDirectory() || !directory.canRead()) throw new IllegalArgumentException("Project directory is unavailable: " + path);
+        for (java.nio.file.Path part : directory.toPath()) if (part.toString().equalsIgnoreCase(".git"))
+            throw new IllegalArgumentException("Git administrative directories cannot be registered as projects.");
+        return directory;
+    }
+    private String canonical(File directory) {
+        try { return directory.getCanonicalPath(); }
+        catch (java.io.IOException e) { throw new IllegalArgumentException("Cannot resolve project directory: " + directory, e); }
+    }
+    private MavenProject folderProject(Workspace workspace, File directory) {
+        String absolute = canonical(directory);
+        String relative = absolute;
+        if (workspace.getBasePath() != null) {
+            try { relative = new File(workspace.getBasePath()).getAbsoluteFile().toPath().normalize().relativize(new File(absolute).toPath()).toString(); }
+            catch (IllegalArgumentException differentDrive) { relative = absolute; }
+        }
+        if (relative.isEmpty()) relative = ".";
+        return MavenProject.builder().withProjectKind(ProjectKind.FOLDER).withAbsolutePath(absolute)
+                .withRelativePath(relative.replace('\\', '/')).withWorkspace(workspace).build();
+    }
 
     /**
      * Recursively finds all pom.xml files starting from a directory.
@@ -521,7 +545,7 @@ public class WorkspaceService {
     private WorkspaceProjectHierarchy summarizeHierarchy(final List<MavenProject> allProjects) {
         final Map<String, List<MavenProject>> byPath = new HashMap<>();
         for (final MavenProject project : allProjects) {
-            if (project.getRelativePath() != null) {
+            if (project.isMaven() && project.getRelativePath() != null) {
                 final String path = project.getRelativePath().replace('\\', '/');
                 byPath.computeIfAbsent(path, ignored -> new ArrayList<>()).add(project);
             }
@@ -530,6 +554,7 @@ public class WorkspaceService {
         final List<MavenProject> topLevel = new ArrayList<>();
         final Set<Long> withChildren = new HashSet<>();
         for (final MavenProject project : allProjects) {
+            if (!project.isMaven()) { topLevel.add(project); continue; }
             final String path = project.getRelativePath();
             if (path == null) {
                 topLevel.add(project);
@@ -655,6 +680,7 @@ public class WorkspaceService {
      * @return True if child is inside parent's directory.
      */
     public boolean isChildOf(final MavenProject child, final MavenProject parent) {
+        if (!parent.isMaven() || !child.isMaven()) return false;
         if (child.getId().equals(parent.getId())) {
             return false;
         }
@@ -737,6 +763,7 @@ public class WorkspaceService {
         
         final List<MavenProject> projects = mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
         for (final MavenProject project : projects) {
+            if (!project.isMaven()) sb.append("NonMavenProject: ");
             if (project.getAbsolutePath() != null) {
                 sb.append(project.getAbsolutePath()).append("\n");
             } else if (project.getRelativePath() != null && workspace.getBasePath() != null) {
@@ -790,15 +817,24 @@ public class WorkspaceService {
         int executionOrder = 0;
         final List<MavenProject> projectsToSave = new ArrayList<>();
 
-        for (final String path : projectPaths) {
+        Set<String> imported = new HashSet<>();
+        for (final String entry : projectPaths) {
+            boolean folder = entry.startsWith("NonMavenProject:");
+            String path = folder ? entry.substring("NonMavenProject:".length()).trim() : entry;
             File projectDir = new File(path);
             if (!projectDir.isAbsolute() && basePath != null) {
                 projectDir = new File(new File(basePath), path);
             }
             
+            if (!projectDir.isDirectory() || !projectDir.canRead()) { workspace.getImportWarnings().add("Unavailable project directory: " + path); continue; }
+            if (!imported.add(canonical(projectDir))) continue;
+            if (folder) {
+                try { projectDir = validatedDirectory(projectDir.getPath()); }
+                catch (IllegalArgumentException e) { workspace.getImportWarnings().add(e.getMessage()); continue; }
+            }
             final File pomFile = new File(projectDir, "pom.xml");
-            if (pomFile.exists()) {
-                final MavenProject projectData = mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
+            if (folder || pomFile.isFile()) {
+                final MavenProject projectData = folder ? folderProject(workspace, projectDir) : mavenService.parsePom(pomFile, workspace.getBasePath(), versionProfileId);
                 projectData.setWorkspace(workspace);
                 projectData.setExecutionOrder(executionOrder++);
                 
@@ -808,7 +844,7 @@ public class WorkspaceService {
                 projectData.setGitBranch(branch);
                 
                 projectsToSave.add(projectData);
-            }
+            } else workspace.getImportWarnings().add("No POM found; skipped Maven entry: " + path);
         }
 
         if (!projectsToSave.isEmpty()) {

@@ -21,9 +21,18 @@ public record NotificationDto(
         List<String> succeededProjects,
         List<String> changedProjects,
         List<String> noChangesProjects,
-        boolean read) {
+        boolean read,
+        List<String> skippedProjects) {
+
+    public NotificationDto(Long id, String createdAt, NotificationCategory category, String action, boolean success,
+            String title, String message, Long workspaceId, String workspaceName, List<String> failedProjects,
+            List<String> succeededProjects, List<String> changedProjects, List<String> noChangesProjects, boolean read) {
+        this(id, createdAt, category, action, success, title, message, workspaceId, workspaceName,
+                failedProjects, succeededProjects, changedProjects, noChangesProjects, read, List.of());
+    }
 
     public NotificationDto {
+        skippedProjects = skippedProjects == null ? List.of() : List.copyOf(skippedProjects);
         failedProjects = failedProjects == null ? List.of() : List.copyOf(failedProjects);
         succeededProjects = succeededProjects == null ? List.of() : List.copyOf(succeededProjects);
         changedProjects = changedProjects == null ? List.of() : List.copyOf(changedProjects);

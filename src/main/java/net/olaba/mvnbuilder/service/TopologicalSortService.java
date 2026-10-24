@@ -31,8 +31,9 @@ public class TopologicalSortService {
      */
     @Transactional
     public void calculateOrder(final Long workspaceId) {
-        final List<MavenProject> allProjects = mavenProjectRepository
+        final List<MavenProject> registrations = mavenProjectRepository
                 .findByWorkspaceIdOrderByExecutionOrderAsc(workspaceId);
+        final List<MavenProject> allProjects = registrations.stream().filter(MavenProject::isMaven).toList();
 
         // 1. Identify parent (root-level) projects
         final List<MavenProject> parentProjects = allProjects.stream()
@@ -224,10 +225,14 @@ public class TopologicalSortService {
         // 5. Update execution order
         log.info("Calculated build order for {} parent projects:", sortedParentIds.size());
         int orderIndex = 0;
+        final Set<Integer> folderPositions = new HashSet<>();
+        for (MavenProject registration : registrations) if (!registration.isMaven() && registration.getExecutionOrder() != null)
+            folderPositions.add(registration.getExecutionOrder());
         final Map<Long, MavenProject> projectMap = allProjects.stream()
                 .collect(Collectors.toMap(MavenProject::getId, p -> p));
 
         for (final Long parentId : sortedParentIds) {
+            while (folderPositions.contains(orderIndex)) orderIndex++;
             final MavenProject parent = projectMap.get(parentId);
             parent.setExecutionOrder(orderIndex++);
             mavenProjectRepository.save(parent);

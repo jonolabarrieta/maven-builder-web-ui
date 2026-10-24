@@ -72,6 +72,9 @@ public class Notification {
     @Column(length = 4000)
     private String noChangesProjects;
 
+    @Column(length = 4000)
+    private String skippedProjects;
+
     /** Whether the notification has been seen in the history panel. */
     @Column(name = "is_read", nullable = false)
     private boolean read;

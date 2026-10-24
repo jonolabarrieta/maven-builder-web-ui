@@ -43,7 +43,8 @@ class WorkspaceBulkActionStashTest {
     /** The stash action forwards the untracked-files choice for both values. */
     @Test
     void stashActionDispatchesWithUntrackedFlag() {
-        final MavenProject project = MavenProject.builder().withId(2L).withArtifactId("stashed").build();
+        final MavenProject project = MavenProject.builder().withId(2L).withArtifactId("stashed")
+                .withWorkspace(net.olaba.mvnbuilder.entities.Workspace.builder().withId(1L).build()).build();
         when(mavenProjectRepository.findAllById(List.of(2L))).thenReturn(List.of(project));
 
         controller.bulkAction(1L, List.of(2L), "stash", true);

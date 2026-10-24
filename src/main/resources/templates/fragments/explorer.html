@@ -14,6 +14,13 @@
             </button>
         </div>
 
+        <div class="px-4 sm:px-6 py-3 border-b border-gray-100">
+            <label class="flex items-center gap-2 text-sm text-gray-700">
+                <input id="include-non-maven" type="checkbox" th:checked="${includeNonMaven}" onchange="toggleNonMavenFolders()" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                Include non-Maven folders
+            </label>
+            <p class="mt-1 text-xs text-gray-600">Add selected folders for Git and local tools. Maven builds skip these folders.</p>
+        </div>
         <!-- Custom Path Direct Entry -->
         <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-100">
             <label for="custom-project-path" class="block text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5 font-semibold">Project folder path</label>
@@ -34,7 +41,7 @@
         
         <div class="p-4 h-[min(350px,45dvh)] overflow-y-auto">
             <div th:if="${parentPath != null}" class="mb-2">
-                <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${parentPath})}"
+                <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${parentPath}, includeNonMaven=${includeNonMaven})}"
                         hx-target="#explorer-modal-content"
                         class="flex items-center space-x-2 w-full p-2 hover:bg-indigo-50 rounded-lg text-indigo-600 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -48,7 +55,7 @@
                 <div th:each="item : ${items}" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg group transition-all">
                     <button type="button" class="flex items-center gap-3 flex-grow min-w-0 text-left"
                          th:if="${item.directory}"
-                         th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${item.path})}"
+                         th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id}, path=${item.path}, includeNonMaven=${includeNonMaven})}"
                          hx-target="#explorer-modal-content">
                         <div class="p-2 shrink-0 bg-amber-50 text-warning rounded-lg group-hover:bg-amber-100 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -67,8 +74,9 @@
                         <span class="text-sm font-medium text-muted break-all" th:text="${item.name}">file-name</span>
                     </div>
 
-                    <div th:if="${item.mavenProject}" class="explorer-markers flex items-center gap-2 shrink-0">
-                        <span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase border border-indigo-100">Maven</span>
+                    <div th:if="${item.mavenProject or (includeNonMaven and item.directory)}" class="explorer-markers flex items-center gap-2 shrink-0">
+                        <span th:if="${!item.mavenProject}" class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">Folder</span>
+                        <span th:if="${item.mavenProject}" class="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px] font-bold uppercase border border-indigo-100">Maven</span>
                         <label class="project-selection"><input type="checkbox" name="selected-paths" th:aria-label="${'Select project ' + item.name}" th:value="${item.path}" class="explorer-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
                     </div>
                 </div>
@@ -90,12 +98,17 @@
                 });
             });
 
+            function toggleNonMavenFolders() {
+                const path = document.getElementById('custom-project-path').value;
+                htmx.ajax('GET', `/workspaces/${workspaceId}/explorer?path=` + encodeURIComponent(path) + '&includeNonMaven=' + document.getElementById('include-non-maven').checked, '#explorer-modal-content');
+            }
+
             function loadCustomPath() {
                 const pathInput = document.getElementById('custom-project-path');
                 if (pathInput) {
                     const path = pathInput.value;
                     if (path) {
-                        htmx.ajax('GET', `/workspaces/${workspaceId}/explorer?path=` + encodeURIComponent(path), '#explorer-modal-content');
+                        htmx.ajax('GET', `/workspaces/${workspaceId}/explorer?path=` + encodeURIComponent(path) + '&includeNonMaven=' + document.getElementById('include-non-maven').checked, '#explorer-modal-content');
                     }
                 }
             }

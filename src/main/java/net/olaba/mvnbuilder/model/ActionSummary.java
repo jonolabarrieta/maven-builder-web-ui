@@ -17,6 +17,9 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ActionSummary {
+    private List<String> skippedProjects;
+    private Long workspaceId;
+    private String runId;
     /** The action name ("build" or "git-pull"). */
     private String action;
     

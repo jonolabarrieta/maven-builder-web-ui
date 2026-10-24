@@ -25,6 +25,8 @@ def build_harness() -> str:
     page_script = match.group(1).replace(
         "const workspaceId = [[${workspace.id}]];", "const workspaceId = 1;", 1
     )
+    # Recovery is tested independently; these fixtures isolate the older page concerns.
+    page_script = "window.BuildRecovery = {init(){}, reset(){}, show(){}};\n" + page_script
     global_spinner_script = GLOBAL_SPINNER.read_text(encoding="utf-8")
     return """<!doctype html><html><body>
         <button type="button" id="log-follow-toggle" aria-pressed="false">

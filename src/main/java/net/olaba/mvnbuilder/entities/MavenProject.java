@@ -22,6 +22,22 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MavenProject {
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(16) default 'MAVEN'")
+    @Builder.Default
+    private ProjectKind projectKind = ProjectKind.MAVEN;
+
+    public ProjectKind getProjectKind() { return projectKind == null ? ProjectKind.MAVEN : projectKind; }
+    public boolean isMaven() { return getProjectKind() == ProjectKind.MAVEN; }
+    public String getDisplayName() {
+        if (isMaven()) return artifactId == null ? "Maven project" : artifactId;
+        String path = absolutePath == null ? relativePath : absolutePath;
+        if (path == null) return "Folder";
+        String normalized = path.replace('\\', '/').replaceAll("/+$", "");
+        return normalized.substring(normalized.lastIndexOf('/') + 1);
+    }
+    public boolean isAvailable() { return absolutePath != null && new java.io.File(absolutePath).isDirectory(); }
+
     /** Unique identifier for the Maven project. */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -83,6 +99,7 @@ public class MavenProject {
      * @return true if there are other projects nested inside this project's path.
      */
     public boolean hasChildren() {
+        if (!isMaven()) return false;
         if (workspace == null || workspace.getProjects() == null) {
             return false;
         }
@@ -91,6 +108,7 @@ public class MavenProject {
         }
         final String parentPath = this.relativePath.replace('\\', '/');
         for (final MavenProject child : workspace.getProjects()) {
+            if (!child.isMaven()) continue;
             if (child == this) {
                 continue;
             }

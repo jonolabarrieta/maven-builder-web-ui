@@ -11,5 +11,12 @@ public record BuildFailure(
     /** The unique identifier of the project that failed. */
     Long projectId, 
     /** List of project IDs that were remaining in the queue when failure occurred. */
-    List<Long> remainingProjectIds
-) {}
+    List<Long> remainingProjectIds,
+    Long workspaceId,
+    String runId,
+    String continuationId
+) {
+    public BuildFailure(String projectName, Long projectId, List<Long> remainingProjectIds) {
+        this(projectName, projectId, remainingProjectIds, null, null, null);
+    }
+}

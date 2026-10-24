@@ -53,6 +53,7 @@ public class NotificationService {
      */
     @Transactional
     public void publish(final ActionSummary summary, final Long workspaceId, final String workspaceName) {
+        summary.setWorkspaceId(workspaceId);
         recordActionSummary(summary, workspaceId, workspaceName);
         messagingTemplate.convertAndSend("/topic/action-summary", summary);
     }
@@ -84,9 +85,11 @@ public class NotificationService {
         final String action = summary.getAction();
         final boolean isBuild = "build".equals(action);
         final String title = isBuild ? "Build result" : gitTitle(action) + " result";
-        final String message = isBuild
+        String message = isBuild
                 ? (summary.isSuccess() ? "Build completed." : "Build stopped at " + safe(summary.getFailedProject()) + ".")
                 : gitTitle(action) + (summary.isSuccess() ? " finished." : " finished with errors.");
+        if (summary.getSkippedProjects() != null && !summary.getSkippedProjects().isEmpty())
+            message += " Skipped: " + String.join(", ", summary.getSkippedProjects()) + ". Only remaining eligible projects were executed.";
         return save(Notification.builder()
                 .withCategory(NotificationCategory.ACTION)
                 .withAction(action)
@@ -99,6 +102,7 @@ public class NotificationService {
                 .withSucceededProjects(joinList(summary.getSucceededProjects()))
                 .withChangedProjects(joinList(summary.getChangedProjects()))
                 .withNoChangesProjects(joinList(summary.getNoChangesProjects()))
+                .withSkippedProjects(joinList(summary.getSkippedProjects()))
                 .build());
     }
 
@@ -225,7 +229,7 @@ public class NotificationService {
                 splitList(notification.getSucceededProjects()),
                 splitList(notification.getChangedProjects()),
                 splitList(notification.getNoChangesProjects()),
-                notification.isRead());
+                notification.isRead(), splitList(notification.getSkippedProjects()));
     }
 
     private static String gitTitle(final String action) {

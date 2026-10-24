@@ -5,8 +5,8 @@ Keep user content, command output and published release notes in their original 
 
 | Term | Meaning and wording |
 | --- | --- |
-| Workspace | A saved collection of Maven projects and its configuration. Deleting it keeps project files on disk. |
-| Project | A Maven project registered in a workspace. Removing it also removes its submodules from the workspace and excludes its path from future scans. |
+| Workspace | A saved collection of Maven projects, explicitly registered folders, and its configuration. Deleting it keeps project files on disk. |
+| Project | A Maven project or explicit Folder registration in a workspace. Removing a Maven project also removes its submodules and excludes its path from future scans; removing a Folder only removes that registration. Files stay on disk. |
 | Submodule | A child Maven project. Use **View submodules**, not “Dive” or “View Recursive”. |
 | Duplicate workspace | Copy the saved workspace. Avoid “Clone”, which could suggest a Git clone. |
 | Base folder | The folder scanned for Maven projects. Explain when scanning happens. |
@@ -23,6 +23,9 @@ Keep user content, command output and published release notes in their original 
 | Selected files | File checkboxes choose commit content; selecting Changes uses the working tree and selecting Staged Changes uses the index. A path has one selected source. |
 | Commit scope | Distinguishes current staged changes, current selected files, and selected files across repositories. Multiple targets create separate commits with the common message. |
 | Push selected | Push the repositories marked by repository checkboxes, independently of file checkboxes. |
+| Folder | An explicitly registered non-Maven directory. Git/local tools apply; Maven builds omit it independently of enabled state. |
+| Include non-Maven folders | Unchecked opt-in in Add projects; automatic workspace scans remain Maven-only. |
+| Skip and continue | Omit the failed project once and resume the original pending build queue. Does not disable that project. |
 | Commit staged changes | Create one repository commit from its reviewed index. Push is a separate action. |
 | Local Maven repository (.m2) | Cached/local Maven artifacts. Deleting these files is different from removing a project registration. Do not promise that all artifacts can be downloaded again. |
 

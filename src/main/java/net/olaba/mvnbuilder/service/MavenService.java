@@ -83,6 +83,7 @@ public class MavenService {
             }
 
             return MavenProject.builder()
+                    .withProjectKind(net.olaba.mvnbuilder.entities.ProjectKind.MAVEN)
                     .withArtifactId(artifactId)
                     .withGroupId(groupId)
                     .withVersion(version)

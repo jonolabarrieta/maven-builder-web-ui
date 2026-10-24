@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 public class BuildController {
 
     private final ProcessExecutionService processExecutionService;
+    private final net.olaba.mvnbuilder.service.BuildService buildService;
 
     /**
      * Terminates the currently running build process.
@@ -26,6 +27,7 @@ public class BuildController {
     @PostMapping("/kill")
     @ResponseBody
     public ResponseEntity<Void> killProcess() {
+        buildService.cancelContinuations();
         processExecutionService.killCurrentProcess();
         return ResponseEntity.ok().build();
     }
