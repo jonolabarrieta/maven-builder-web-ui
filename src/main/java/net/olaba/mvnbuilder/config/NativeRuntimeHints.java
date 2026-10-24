@@ -58,6 +58,9 @@ public class NativeRuntimeHints {
                     MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(net.olaba.mvnbuilder.service.GitService.ReferenceType.class,
                     MemberCategory.INVOKE_PUBLIC_METHODS);
+            for (Class<?> type : net.olaba.mvnbuilder.service.git.GitModels.class.getDeclaredClasses()) {
+                if (type.isRecord()) hints.reflection().registerType(type, MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS, MemberCategory.INVOKE_PUBLIC_METHODS, MemberCategory.DECLARED_FIELDS);
+            }
             // Register List and ArrayList methods for reflection (needed by SpEL/Thymeleaf)
             hints.reflection().registerType(java.util.List.class, MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(ArrayList.class, MemberCategory.INVOKE_PUBLIC_METHODS);

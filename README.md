@@ -26,6 +26,10 @@ MvnBuilder is a robust administrative dashboard designed to manage complex Maven
 - **Bulk Actions**: Perform Git Fetch, Pull, or Maven Build on multiple selected projects simultaneously.
 - **Drag & Drop Reordering**: Manually override the build order using an intuitive interactive list.
 
+### Workspace Git view
+
+Choose **Git** in a workspace to review every repository below its base folder, including non-Maven projects. Compare staged and unstaged files, stage or unstage selected lines/blocks, commit chosen file subsets in one or several repositories, and run fetch, pull, push, stash, or confirmed discard actions. File lists can be collapsed and selected repositories can be pushed together. See [Workspace Git guide](docs/workspace-git.md) for comparisons, operation boundaries, configuration, and verification.
+
 ### 📱 Responsive Design
 MvnBuilder adapts to desktop, tablet, and mobile screens.
 

@@ -136,6 +136,12 @@ public class GitService {
     /** Typed single-project checkout. A legacy request without a type is local-only. */
     public ReferenceState checkoutReference(final File projectDir, final String reference,
             final String referenceType) {
+        return net.olaba.mvnbuilder.service.git.GitMutationCoordinator.mutate(projectDir,
+                () -> checkoutReferenceCoordinated(projectDir, reference, referenceType));
+    }
+
+    private ReferenceState checkoutReferenceCoordinated(final File projectDir, final String reference,
+            final String referenceType) {
         final ReferenceType type;
         try {
             type = referenceType == null ? ReferenceType.LOCAL : ReferenceType.valueOf(referenceType);
@@ -226,8 +232,10 @@ public class GitService {
     }
 
     private boolean executeGitCommand(final File projectDir, final String... args) {
-        readGit(projectDir, args);
-        return true;
+        return net.olaba.mvnbuilder.service.git.GitMutationCoordinator.mutate(projectDir, () -> {
+            readGit(projectDir, args);
+            return true;
+        });
     }
 
     private String readGit(final File projectDir, final String... args) {

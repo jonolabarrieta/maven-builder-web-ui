@@ -54,6 +54,14 @@ public class ProcessExecutionService {
      */
     @Async
     public CompletableFuture<CommandResult> executeCommandWithJavaHome(final String label, final File directory, final String javaHome, final String... command) {
+        if (command.length > 0 && "git".equals(command[0])) {
+            return net.olaba.mvnbuilder.service.git.GitMutationCoordinator.mutate(directory,
+                    () -> executeCoordinated(label, directory, javaHome, command));
+        }
+        return executeCoordinated(label, directory, javaHome, command);
+    }
+
+    private CompletableFuture<CommandResult> executeCoordinated(final String label, final File directory, final String javaHome, final String... command) {
         final long startTime = System.currentTimeMillis();
         final long startNanos = System.nanoTime();
         Process process = null;
@@ -63,6 +71,10 @@ public class ProcessExecutionService {
             final ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(directory);
             pb.redirectErrorStream(true); // Merge stdout and stderr
+            if (command.length > 0 && "git".equals(command[0])) {
+                pb.environment().put("GIT_TERMINAL_PROMPT", "0");
+                pb.environment().put("GCM_INTERACTIVE", "never");
+            }
 
             // Inject custom JAVA_HOME and prepand its bin folder to PATH
             if (javaHome != null && !javaHome.trim().isEmpty()) {
@@ -86,6 +98,19 @@ public class ProcessExecutionService {
             }
 
             process = pb.start();
+            if (command.length > 0 && "git".equals(command[0])) {
+                process.getOutputStream().close();
+                final Process runningGit = process;
+                Thread.ofVirtual().name("project-git-deadline").start(() -> {
+                    try {
+                        if (!runningGit.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+                            sendLog(label, "Git timed out. Refresh repository state before trying again.");
+                            runningGit.descendants().forEach(ProcessHandle::destroyForcibly);
+                            runningGit.destroyForcibly();
+                        }
+                    } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                });
+            }
             activeProcesses.add(process);
             final long pid = process.pid();
 

@@ -39,3 +39,6 @@ Thumbs.db
 
 # Test Projects
 proyectosPruebas/
+
+# Local visual verification captures
+.impeccable/review/

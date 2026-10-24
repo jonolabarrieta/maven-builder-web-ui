@@ -48,6 +48,10 @@
                 </div>
             </div>
         </div>
+        <nav aria-label="Workspace views" class="flex items-center gap-2 text-sm">
+            <a th:href="@{/workspaces/{id}(id=${workspace.id})}" aria-current="page" class="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700 font-semibold">Projects</a>
+            <a th:href="@{/workspaces/{id}/git(id=${workspace.id})}" class="px-3 py-2 rounded-lg text-gray-700 hover:bg-gray-50">Git</a>
+        </nav>
         <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0 xl:ml-auto">
             <button th:attr="hx-get=@{/workspaces/{id}/explorer(id=${workspace.id})}"
                     hx-target="#explorer-modal-content" hx-trigger="click"

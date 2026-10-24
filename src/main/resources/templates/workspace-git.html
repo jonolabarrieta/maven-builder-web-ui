@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${workspace.name + ' · Git · MvnBuilder'}">Git · MvnBuilder</title>
+    <link rel="icon" href="/favicon.png"><link rel="stylesheet" href="/css/app.css"><link rel="stylesheet" href="/css/workspace-git.css">
+    <script src="/js/global-spinner.js" defer></script><script src="/js/confirmation-modal.js" defer></script><script src="/js/workspace-git.js" defer></script>
+</head>
+<body class="git-page" th:attr="data-workspace-id=${workspace.id},data-workspace-name=${workspace.name}">
+<header class="git-header">
+    <a href="/" class="git-home" aria-label="Back to workspaces"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg></a>
+    <div class="git-workspace"><strong th:text="${workspace.name}">Workspace</strong><span th:text="${workspace.basePath ?: 'No base folder configured'}">Base folder</span></div>
+    <nav aria-label="Workspace views" class="git-views"><a th:href="@{/workspaces/{id}(id=${workspace.id})}">Projects</a><a th:href="@{/workspaces/{id}/git(id=${workspace.id})}" aria-current="page">Git</a></nav>
+    <button type="button" id="git-refresh">Refresh repositories</button>
+</header>
+<div id="git-announcement" role="status" aria-live="polite" class="git-announcement">Discovering repositories…</div>
+<main class="git-layout">
+    <aside class="git-sidebar" aria-label="Repositories and changed files">
+        <div class="git-sidebar-heading"><h1>Source control</h1><span id="git-count" class="git-count">0 repositories</span></div>
+        <label class="git-search"><span class="sr-only">Search repositories and file paths</span><input id="git-search" type="search" placeholder="Search repositories and files" autocomplete="off"></label>
+        <div class="git-filters"><label><input id="git-changed-only" type="checkbox"> With changes only</label><label><input id="git-select-all" type="checkbox"> Select visible</label></div>
+        <div class="git-bulk"><span id="git-selected-count">0 selected</span><button type="button" id="git-push-selected" disabled>Push selected (0)</button><details id="git-bulk-menu"><summary>Selected actions</summary><div class="git-menu"><button type="button" data-bulk-action="fetch">Fetch selected</button><button type="button" data-bulk-action="pull">Pull selected</button><button type="button" data-bulk-action="push">Push selected</button><button type="button" data-bulk-action="stash">Stash selected</button><button type="button" data-bulk-action="unstage-all">Unstage selected</button><button type="button" data-bulk-action="discard" class="git-danger">Discard selected changes</button></div></details></div>
+        <div id="git-warnings" class="git-warnings" role="status"></div>
+        <div id="git-repositories"><p class="git-empty">Scanning the workspace base folder…</p></div>
+    </aside>
+    <section class="git-workbench" aria-label="Repository changes">
+        <div class="git-repository-toolbar"><button type="button" id="git-back" class="git-mobile-back">Repositories</button><div class="git-repository-identity"><h2 id="git-repository-name">Choose a repository</h2><span id="git-repository-branch">Review changes, prepare a commit, then push.</span></div><div id="git-repository-actions" class="git-actions" hidden><button type="button" data-action="fetch">Fetch</button><button type="button" data-action="pull">Pull</button><button type="button" data-action="push">Push</button><details id="git-repo-menu"><summary>More</summary><div class="git-menu"><button type="button" data-action="stash">Stash changes</button><button type="button" data-action="unstage-all">Unstage all</button><button type="button" data-action="discard" class="git-danger">Discard changes</button></div></details></div></div>
+        <div class="git-diff-toolbar"><div class="git-file-identity"><strong id="git-file-name">No file selected</strong><span id="git-comparison-label">Select a file to compare its changes.</span></div><label class="git-mode"><span>View</span><select id="git-diff-mode"><option value="split">Side by side</option><option value="unified">Unified</option></select></label></div>
+        <div class="git-selection-toolbar"><span id="git-selection-count">0 lines selected</span><button type="button" id="git-select-block" disabled>Select block</button><button type="button" id="git-stage-lines" disabled>Stage selected lines</button><button type="button" id="git-stage-file" disabled>Stage file</button><button type="button" id="git-discard-file" class="git-danger" disabled>Discard file changes</button><div class="git-change-navigation"><button type="button" id="git-prev-block" aria-label="Previous change block" disabled>Previous block</button><button type="button" id="git-next-block" aria-label="Next change block" disabled>Next block</button></div></div>
+        <div id="git-diff" class="git-diff" tabindex="0" aria-label="File comparison"><div class="git-welcome"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M17 13v22m14-22v22M10 8h28v32H10zM21 18h6m-6 6h6m-6 6h6"/></svg><h3>Your workspace, repository by repository</h3><p>Select a changed file to compare versions and choose the lines for your next commit.</p></div></div>
+        <form id="git-commit-form" class="git-commit-form"><label for="git-commit-message">Commit message <span id="git-commit-repository"></span></label><div class="git-commit-scope"><label for="git-commit-mode">Commit scope</label><select id="git-commit-mode"><option value="staged">Staged changes · current repository</option><option value="selected-current">Selected files · current repository</option><option value="selected-all">Selected files · multiple repositories</option></select><span id="git-selected-files-count">0 files selected</span></div><div class="git-commit-input"><textarea id="git-commit-message" rows="2" maxlength="65536" placeholder="Describe the staged changes" disabled></textarea><button type="submit" id="git-commit-button" disabled>Commit staged changes</button></div><p id="git-commit-help">Commits include staged changes only. Push is a separate action.</p></form>
+        <section class="git-operation-panel" aria-label="Git operation results"><details id="git-operation-details"><summary id="git-operation-heading">Operation results</summary><ul id="git-operation-results" aria-live="polite"></ul></details></section>
+    </section>
+</main>
+</body>
+</html>
