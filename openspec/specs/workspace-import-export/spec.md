@@ -4,33 +4,76 @@
 TBD - created by archiving change import-export-workspace. Update Purpose after archive.
 ## Requirements
 ### Requirement: Export Workspace as Plain Text
-The system SHALL provide an option to export a workspace as a plain text file containing the workspace name, the base directory path, any excluded paths, and the project paths in their current execution order. It SHALL also provide a separate option to export only the project paths.
+The system SHALL export a workspace as a UTF-8 plain text configuration containing its name, base directory, exclusions, project kinds and order. Ungrouped legacy export SHALL retain plain Maven paths and explicit `NonMavenProject: <path>` entries. Grouped export SHALL use an explicitly versioned structured text format preserving block order, local membership, imported references, member enabled overrides and included parent definitions. Each referenced parent SHALL be embedded once using file-local identities, without database IDs or derived Maven/Git metadata. The separate paths-only export SHALL flatten effective execution order and emit each canonical absolute project path once, without metadata or type markers.
 
 #### Scenario: User exports workspace
-- **WHEN** the user triggers the "Export Workspace" action on the workspace details page
-- **THEN** the system generates and prompts the download of a plain text file with the workspace configuration and the project paths in execution order
+- **WHEN** the user triggers Export Workspace
+- **THEN** the system SHALL download its configuration and ordered project entries, using the versioned format when groups or parent references are present.
+
+#### Scenario: Export a mixed workspace
+- **WHEN** the workspace contains interleaved Maven projects and explicit non-Maven folders
+- **THEN** the configuration SHALL retain their kinds and relative order in either supported format.
 
 #### Scenario: User exports only workspace paths
-- **WHEN** the user triggers the "Export Workspace Paths" action on the workspace details page
-- **THEN** the system downloads a UTF-8 plain text file containing exactly one absolute project path per line in current execution order, with no workspace metadata, project names, or exclusion entries.
+- **WHEN** the user triggers Export Workspace Paths on a grouped workspace
+- **THEN** the downloaded file SHALL contain only absolute paths in flattened execution order, with duplicate canonical directories emitted once and no metadata, names, exclusions or type markers.
+
+#### Scenario: Export a shared parent
+- **WHEN** a consumer containing an imported parent is exported
+- **THEN** the file SHALL include enough parent configuration to reconstruct that group on another installation without access to the original database.
 
 ### Requirement: Import Workspace from Plain Text
-The system SHALL allow users to import a workspace by uploading a plain text file or pasting the plain text configuration directly into a form. The imported workspace MUST be created with the specified name, base directory path, and excluded paths.
+The system SHALL accept uploaded or pasted legacy workspace configurations, paths-only files and versioned grouped configurations. It SHALL create the specified workspace configuration, preserve explicit project kinds, and resolve valid ordered registrations. Unmarked legacy paths without a POM SHALL receive a warning rather than become non-Maven folders. Normalized duplicate directories SHALL NOT create duplicate registrations within one owner. Grouped imports SHALL create new parent definitions and rebuild references using file-local identities; they SHALL NOT overwrite or implicitly link existing parents by matching name or database ID. Structurally malformed files or unsupported versions SHALL be rejected before any configuration is persisted. Unavailable project directories SHALL retain the existing warning-and-skip behavior.
 
 #### Scenario: User imports workspace successfully
-- **WHEN** the user submits the import workspace form with valid plain text workspace configuration
-- **THEN** the system creates the workspace entity and imports all listed projects on the workspace detail screen
+- **WHEN** a valid plain text configuration is submitted
+- **THEN** the system SHALL create its named workspace with base directory, exclusions and valid ordered project registrations.
+
+#### Scenario: Round-trip a mixed workspace
+- **WHEN** an export containing Maven and explicit non-Maven entries is imported
+- **THEN** their kinds and relative order SHALL be preserved.
+
+#### Scenario: Read a legacy configuration
+- **WHEN** an existing configuration contains only unmarked paths including one without a POM
+- **THEN** Maven paths SHALL retain their import behavior and the no-POM entry SHALL be skipped with feedback.
+
+#### Scenario: Round-trip a grouped workspace
+- **WHEN** a valid grouped configuration with local groups, ungrouped projects and an imported parent is imported
+- **THEN** the new workspace SHALL preserve those boundaries, their ordered sequence and local enabled overrides and SHALL reference the newly reconstructed parent.
+
+#### Scenario: Parent name collision
+- **WHEN** an imported parent has the same name as an existing parent
+- **THEN** the importer SHALL create a separate identity, report the duplicate display name and SHALL NOT modify or attach the existing parent.
+
+#### Scenario: Unsupported or malformed grouped file
+- **WHEN** a file has an unsupported version, dangling parent identity, nested group or repeated parent import within one consumer
+- **THEN** the system SHALL reject the entire structural import with an actionable error and SHALL persist no new workspace, group or parent.
 
 ### Requirement: Recalculate Project Metadata on Import
-The system SHALL recalculate all Maven and Git project metadata dynamically upon importing a workspace. No database-stored metadata from the original workspace SHALL be imported from the text configuration.
+The system SHALL recalculate project metadata from local files during import and SHALL not import database-derived metadata. Maven entries SHALL parse their POM and resolve Git information; explicit non-Maven entries SHALL derive their display name and Git information from their directory without requiring a POM or fabricating Maven coordinates.
 
 #### Scenario: Metadata recalculation
-- **WHEN** a workspace is imported
-- **THEN** the system scans and parses the `pom.xml` for each project path to populate Maven metadata and resolves the current Git branch on disk
+- **WHEN** a Maven entry is imported
+- **THEN** its Maven metadata SHALL be populated from its local POM and its current Git branch SHALL be resolved from disk.
+
+#### Scenario: Import a folder entry
+- **WHEN** an explicit non-Maven entry is imported
+- **THEN** the folder basename and applicable current Git metadata SHALL be derived without Maven parsing, even if a POM has appeared since export.
 
 ### Requirement: Preserve Project Execution Order
-The system SHALL preserve the exact order of the projects as defined in the plain text configuration file when importing them into the new workspace.
+The system SHALL preserve the exact imported sequence of successfully registered projects. For grouped formats it SHALL preserve block positions and local member order, resolve imported member order from included parent definitions and produce the same effective execution sequence. Skipped unavailable registrations SHALL NOT reorder surviving entries.
 
 #### Scenario: Preserving execution order
-- **WHEN** a workspace is imported with a list of projects in a specific sequence
-- **THEN** the system sets the execution order of each successfully imported project starting from 0 to match the exact sequence in the configuration file
+- **WHEN** an ungrouped configuration lists projects in a specific sequence
+- **THEN** successful imports SHALL be assigned order starting from zero following that sequence.
+
+#### Scenario: Preserving grouped execution order
+- **WHEN** a grouped export represents root A, group B/C, imported D/E, root F
+- **THEN** reimport SHALL preserve those boundaries and flatten to A, B, C, D, E, F for all available entries.
+
+### Requirement: Recalculate grouped project metadata
+Versioned grouped imports SHALL derive Maven and Git metadata from local project directories rather than import cached source data. Explicit non-Maven entries SHALL keep their classification even if a POM now exists. The importer SHALL warn about unavailable or invalid paths while preserving valid group structure and surviving entry order.
+
+#### Scenario: Import a parent containing a folder
+- **WHEN** a parent definition includes an explicit non-Maven entry whose local directory now contains a POM
+- **THEN** that registration SHALL remain non-Maven and its folder name and applicable Git state SHALL be derived from disk without Maven parsing.
