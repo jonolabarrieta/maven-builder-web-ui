@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-<div th:fragment="project-properties-list" class="flex flex-col animate-in fade-in zoom-in duration-200" id="project-properties-modal-content-inner">
+<div th:fragment="project-properties-list" class="flex flex-col animate-in fade-in zoom-in duration-200" id="project-properties-modal-content-inner" th:attr="data-consumer-id=${consumerId},data-context-group-id=${contextGroupId}">
     <!-- Header -->
     <div class="px-4 sm:px-6 py-4 border-b border-gray-100 flex justify-between items-center gap-2 bg-gray-50/50">
         <div class="min-w-0 break-all">

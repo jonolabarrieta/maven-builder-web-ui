@@ -37,7 +37,13 @@ import java.nio.file.Paths;
     LogMessage.class,
     ProcessInfo.class,
     AssetInfo.class,
-    UpdateInfo.class
+    UpdateInfo.class,
+    net.olaba.mvnbuilder.service.WorkspaceExchangeService.Bundle.class,
+    net.olaba.mvnbuilder.service.WorkspaceExchangeService.Definition.class,
+    net.olaba.mvnbuilder.service.WorkspaceExchangeService.Project.class,
+    net.olaba.mvnbuilder.service.WorkspaceExchangeService.Block.class,
+    net.olaba.mvnbuilder.service.WorkspaceGroupService.Block.class,
+    net.olaba.mvnbuilder.service.WorkspaceGroupService.Composition.class
 })
 public class MvnBuilderApplication {
 

@@ -147,3 +147,5 @@ Licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) f
 ## References
 
 Agents document is based on the guidelines found at [Agents.md for Java and Spring Boot](https://josealopez.dev/en/blog/agents-md-java-spring-boot).
+
+See [Parent workspaces and project groups](docs/workspace-groups.md) for shared collections, local groups, scoped actions, portable configuration and migration.

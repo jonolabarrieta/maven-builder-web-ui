@@ -29,6 +29,15 @@
         #log-tabs::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
         #log-tabs::-webkit-scrollbar-thumb:hover { background: #6366f1; }
         #project-table-body td { vertical-align: top; }
+        #project-table-body tr.workspace-group-member > td { background: #fbfbff; }
+        #project-table-body tr.workspace-group-member > td:first-child { border-left: 3px solid #c7d2fe; }
+        #project-table-body tr.workspace-group-member-last > td { border-bottom: 2px solid #a5b4fc; }
+        #project-table-body tr.workspace-group-end > td { padding-top: .25rem; padding-bottom: .5rem; }
+        @media (max-width: 1023px) {
+            #project-table-body tr.workspace-group-member { background: #fbfbff; }
+            #project-table-body tr.workspace-group-end { border-bottom: 0; grid-column: 1 / -1; padding: .25rem 1rem .75rem; }
+            #project-table-body tr.workspace-group-end > td { grid-column: 1 / -1; }
+        }
         #build-output { height: 220px; min-height: 150px; resize: vertical; }
         #build-output:has(#retry-container:not(.hidden)) { min-height: 360px; }
         #log-containers { min-height: 0; }
@@ -253,10 +262,29 @@
             </div>
         </div>
 
+        <section th:if="${workspace.parent}" class="bg-indigo-50 rounded-xl p-4 text-sm text-indigo-800" aria-label="Shared workspace consumers">
+            <strong>Parent workspace</strong><p>Project changes are shared with every importing workspace.</p>
+            <span th:if="${#lists.isEmpty(consumers)}">No workspaces import this parent yet.</span>
+            <a th:each="consumer : ${consumers}" th:href="@{/workspaces/{id}(id=${consumer.id})}" th:text="${consumer.name}" class="underline mr-3"></a>
+            <a href="/parent-workspaces" class="underline">All parent workspaces</a>
+        </section>
         <div class="w-full">
-            <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-lg font-semibold text-gray-800">Projects <span class="text-sm font-normal text-muted" th:text="${'(' + projects.size() + ')'}">(1)</span></h2>
+                <div class="flex flex-wrap items-center gap-2" th:unless="${workspace.parent}">
+                    <button type="button"
+                            class="bg-white text-indigo-700 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 font-semibold text-sm"
+                            th:attr="hx-get=@{/workspaces/{id}/groups/new-modal(id=${workspace.id})}"
+                            hx-target="#group-modal-content"
+                            onclick="openGroupModal()">Create new group</button>
+                    <button type="button"
+                            class="bg-white text-indigo-700 border border-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-50 font-semibold text-sm"
+                            th:attr="hx-get=@{/workspaces/{id}/groups/parent-workspaces-modal(id=${workspace.id})}"
+                            hx-target="#parent-workspaces-modal-content"
+                            onclick="openParentWorkspacesModal()">Add parent workspace</button>
+                </div>
                 <span th:if="${projects.size() > 1}" class="text-xs text-muted">Reorder projects</span>
+                <span th:if="${!groups.isEmpty()}" class="text-xs text-muted">Groups are visual only; Build All follows the Order column.</span>
                 <span id="project-order-status" class="sr-only" role="status" aria-live="polite"></span>
             </div>
             <!-- Projects Table -->
@@ -291,10 +319,12 @@
                         <tr th:if="${projects.isEmpty()}">
                             <td colspan="7" class="px-6 py-10 text-center text-sm text-gray-600">No projects yet. Add a project to start building.</td>
                         </tr>
-                        <tr th:each="project : ${projects}" 
+                        <th:block th:each="block : ${blocks}">
+                        <th:block th:if="${block.group != null}"><tr th:replace="~{fragments/workspace-group :: header(group=${block.group}, members=${block.projects}, blockKey=${block.key})}"></tr></th:block>
+                        <tr th:each="project, projectStat : ${block.projects}"
                             class="hover:bg-gray-50/50 transition-all duration-300 group"
-                            th:classappend="${!project.enabled ? 'project-skipped' : ''}"
-                            th:attr="data-id=${project.id}"
+                            th:classappend="${(block.group != null ? ' workspace-group-member' : '') + (block.group != null and projectStat.last ? ' workspace-group-member-last' : '') + (!project.enabled ? ' project-skipped' : '')}"
+                            th:attr="data-id=${project.id},data-context-group-id=${project.contextGroupId},data-consumer-id=${workspace.id},data-block-key=${block.key},data-imported=${project.imported}"
                             th:id="'project-row-' + ${project.id}">
                             <td class="px-6 py-4">
                                 <label class="project-selection"><input type="checkbox" name="project-checkbox" th:value="${project.id}" th:aria-label="'Select project ' + ${project.displayName}" class="project-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"></label>
@@ -312,20 +342,22 @@
                                     </svg>
                                 </button>
                             </td>
-                            <td class="px-6 py-4 flex items-center gap-1">
-                                <button type="button" class="project-order-handle icon-button cursor-grab text-muted hover:bg-gray-100" th:aria-label="${'Reorder ' + project.displayName + ': use Arrow Up or Arrow Down'}" onkeydown="reorderProjectByKey(event, this)">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
-                                </svg>
-                                </button>
-                                <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-muted" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
-                                <div class="project-order-buttons">
-                                    <button type="button" onclick="moveProject(this, -1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' up'}" data-move="-1">
-                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center gap-1">
+                                    <button type="button" class="project-order-handle icon-button cursor-grab text-muted hover:bg-gray-100" th:aria-label="${'Reorder ' + project.displayName + ': use Arrow Up or Arrow Down'}" onkeydown="reorderProjectByKey(event, this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                                    </svg>
                                     </button>
-                                    <button type="button" onclick="moveProject(this, 1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' down'}" data-move="1">
-                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 9l7 7 7-7" /></svg>
-                                    </button>
+                                    <span class="order-number w-8 h-8 flex items-center justify-center bg-gray-100 rounded-lg text-sm font-bold text-muted" th:text="${project.executionOrder != null ? project.executionOrder + 1 : '-'}">1</span>
+                                    <div class="project-order-buttons">
+                                        <button type="button" onclick="moveProject(this, -1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' up'}" data-move="-1">
+                                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
+                                        </button>
+                                        <button type="button" onclick="moveProject(this, 1)" class="icon-button text-muted hover:bg-gray-100 disabled:opacity-40" th:aria-label="${'Move ' + project.displayName + ' down'}" data-move="1">
+                                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 9l7 7 7-7" /></svg>
+                                        </button>
+                                    </div>
                                 </div>
                             </td>
                             <td class="px-6 py-4">
@@ -453,7 +485,17 @@
                                                     </svg>
                                                         <span>Local M2 repository</span>
                                                 </button>
-                                                <button th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
+                                                <a th:if="${project.imported}" th:href="@{/workspaces/{id}(id=${project.workspace.id})}" class="block px-2 py-1.5 text-sm text-indigo-700 underline">Edit in parent workspace</a>
+                                                <form th:if="${!workspace.parent and !project.imported}" th:action="@{/workspaces/{id}/groups/move-project(id=${workspace.id})}" method="post" class="flex flex-wrap gap-2 p-2">
+                                                    <input type="hidden" name="projectId" th:value="${project.id}">
+                                                    <label class="text-sm">Move to
+                                                        <select name="groupId" class="border border-gray-200 rounded-lg p-1">
+                                                            <option value="">Ungrouped</option>
+                                                            <option th:each="target : ${groups}" th:if="${!target.imported}" th:value="${target.id}" th:text="${target.name}" th:selected="${target.id == project.contextGroupId}"></option>
+                                                        </select>
+                                                    </label><button class="text-sm text-indigo-700 font-semibold">Move project</button>
+                                                </form>
+                                                <button th:unless="${project.imported}" th:attr="hx-post=@{/projects/{id}/delete(id=${project.id})}"
                                                         hx-confirm="Remove this project and its submodules from the workspace? They will be excluded from future scans. Files on disk will be kept."
                                                         class="flex items-center gap-2 px-2 py-1.5 text-sm text-danger hover:text-red-800 hover:bg-red-50 rounded-lg transition-all" title="Remove Project">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -467,6 +509,14 @@
                                 </div>
                             </td>
                         </tr>
+                        <tr th:if="${block.group != null}" class="workspace-group-end" th:attr="data-group-id=${block.group.id}"
+                            th:with="displayName=${block.group.imported ? block.group.parentWorkspace.name : block.group.name}">
+                            <td colspan="7" class="px-4 sm:px-6 py-1.5 border-t border-indigo-100 text-right">
+                                <span class="inline-block rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-400"
+                                      th:text="${'End of ' + displayName}">End of group</span>
+                            </td>
+                        </tr>
+                        </th:block>
                     </tbody>
                 </table>
             </div>
@@ -1499,6 +1549,7 @@
 
         /** Keeps the selected IDs within the displayed list after an explicit rescan. */
         function reconcileProjectSelection() {
+            window.WorkspaceGroups?.reconcile(selectedProjectIds);
             const visibleIds = new Set(Array.from(
                 document.querySelectorAll('#project-table-body .project-checkbox'), checkbox => checkbox.value));
             for (const id of selectedProjectIds) {
@@ -1517,6 +1568,7 @@
                 : `${selectedCount} project${selectedCount === 1 ? '' : 's'} selected`;
             document.getElementById('bulk-actions').classList.toggle('hidden', selectedCount === 0);
             if (selectedCount === 0) document.getElementById('bulk-more-menu').open = false;
+            window.WorkspaceGroups?.syncSelection(selectedProjectIds);
             const selectAll = document.getElementById('select-all');
             if (selectAll) {
                 selectAll.disabled = checkboxes.length === 0;
@@ -1544,6 +1596,7 @@
             renderProjectSelection();
         }
 
+        window.WorkspaceProjectSelection = {selected: selectedProjectIds, render: renderProjectSelection};
         let refreshInProgress = false;
         let gitGeneration = 0;
         let gitController = null;
@@ -1878,6 +1931,8 @@
             const projectPropertiesModal = document.getElementById('project-properties-modal');
             const bulkBranchModal = document.getElementById('bulk-branch-modal');
             const directoryExplorerModal = document.getElementById('directory-explorer-modal');
+            const groupModal = document.getElementById('group-modal');
+            const parentWorkspacesModal = document.getElementById('parent-workspaces-modal');
             if (event.target == branchModal) branchModal.classList.add('hidden');
             if (event.target == editModal) editModal.classList.add('hidden');
             if (event.target == m2Modal) m2Modal.classList.add('hidden');
@@ -1887,6 +1942,8 @@
             if (event.target == projectPropertiesModal) projectPropertiesModal.classList.add('hidden');
             if (event.target == bulkBranchModal) bulkBranchModal.classList.add('hidden');
             if (event.target == directoryExplorerModal) directoryExplorerModal.classList.add('hidden');
+            if (event.target == groupModal) groupModal.classList.add('hidden');
+            if (event.target == parentWorkspacesModal) parentWorkspacesModal.classList.add('hidden');
         }
 
         const workspaceNav = document.getElementById('workspace-nav');
@@ -1988,6 +2045,7 @@
         function initializeProjectSorting() {
             const tbody = document.getElementById('project-table-body');
             if (!tbody) return;
+            if (tbody.querySelector('.workspace-group-header')) { window.WorkspaceGroups?.initialize(); return; }
             updateOrderControls(tbody);
             if (!tbody.dataset.sortableInitialized && tbody.querySelector('tr[data-id]')) {
                 tbody.dataset.sortableInitialized = 'true';
@@ -2004,8 +2062,27 @@
         }
         document.addEventListener('DOMContentLoaded', initializeProjectSorting);
     </script>
+    <!-- Group create/edit dialog -->
+    <div id="group-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div id="group-modal-content" class="w-full max-w-2xl">
+            <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl p-8 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Parent workspaces dialog -->
+    <div id="parent-workspaces-modal" class="hidden fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
+        <div id="parent-workspaces-modal-content" class="w-full max-w-2xl">
+            <div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl p-8 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Profile Manager Modal Placeholder -->
     <div id="profile-manager-modal-container"></div>
 
+<script src="/js/workspace-groups.js" defer></script>
 </body>
 </html>

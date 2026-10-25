@@ -8,7 +8,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** Transient recovery plans; queue ownership and one-shot acceptance stay on the server. */
 public final class BuildContinuationRegistry {
-    public record Target(Long id, String directory) { }
+    public record Target(Long id, String directory, Long groupId) {
+        public Target(Long id, String directory) { this(id, directory, null); }
+    }
     public record Plan(Long workspaceId, String runId, List<Target> pending, List<String> command,
                        String javaHome, List<String> skipped) {
         public Plan { pending=List.copyOf(pending); command=List.copyOf(command); skipped=List.copyOf(skipped); }

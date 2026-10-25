@@ -24,6 +24,9 @@ import java.util.concurrent.CompletableFuture;
 @Service
 @RequiredArgsConstructor
 public class BuildService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private WorkspaceGroupService workspaceGroups;
+
 
     private final ProcessExecutionService processExecutionService;
     private final WorkspaceService workspaceService;
@@ -43,6 +46,8 @@ public class BuildService {
      * @return the workspace or null
      */
     private Workspace workspaceOf(final List<MavenProject> projects) {
+        var contextual = projects.stream().filter(p -> p != null && p.getConsumerWorkspaceId() != null).findFirst();
+        if (contextual.isPresent()) return workspaceService.getWorkspace(contextual.get().getConsumerWorkspaceId()).orElseThrow();
         return projects.stream()
                 .filter(project -> project != null && project.getWorkspace() != null)
                 .map(MavenProject::getWorkspace)
@@ -58,13 +63,8 @@ public class BuildService {
      * @param projects the affected projects
      */
     private void publishSummary(final ActionSummary summary, final List<MavenProject> projects) {
-        final MavenProject context = projects.stream()
-                .filter(project -> project != null && project.getWorkspace() != null)
-                .findFirst()
-                .orElse(null);
-        notificationService.publish(summary,
-                context == null ? null : context.getWorkspace().getId(),
-                context == null ? null : context.getWorkspace().getName());
+        Workspace context = workspaceOf(projects);
+        notificationService.publish(summary, context == null ? null : context.getId(), context == null ? null : context.getName());
     }
 
     /**
@@ -105,8 +105,8 @@ public class BuildService {
         final String[] fullCmd = new String[args.length + 1];
         fullCmd[0] = getMvnCommand();
         System.arraycopy(args, 0, fullCmd, 1, args.length);
-        final String javaHome = getJavaHomeForWorkspace(project.getWorkspace());
-        final Workspace workspace = project.getWorkspace();
+        final Workspace workspace = workspaceOf(List.of(project));
+        final String javaHome = getJavaHomeForWorkspace(workspace);
         final BuildHistoryService.BuildRunRecorder recorder = buildHistoryService.start(
                 workspace == null ? null : workspace.getId(),
                 workspace == null ? null : workspace.getName(),
@@ -146,8 +146,13 @@ public class BuildService {
         Workspace workspace = workspaceOf(projects);
         String[] args=getActiveProfileCommand();
         java.util.ArrayList<String> command=new java.util.ArrayList<>(); command.add(getMvnCommand()); command.addAll(List.of(args));
-        List<String> excluded=projects.stream().filter(p->!p.isMaven()).map(MavenProject::getDisplayName).toList();
-        executePlan(projects.stream().filter(MavenProject::isMaven).distinct().toList(), type, command,
+        List<String> excluded=new java.util.ArrayList<>(projects.stream().filter(p->!p.isMaven()).map(MavenProject::getDisplayName).toList());
+        java.util.Set<String> directories = new java.util.HashSet<>();
+        List<MavenProject> targets = projects.stream().filter(MavenProject::isMaven)
+            .filter(p -> { boolean available = p.getConsumerWorkspaceId() == null || p.isAvailable();
+                if (!available) excluded.add(p.getDisplayName() + " (directory unavailable)"); return available; })
+            .filter(p -> directories.add(WorkspaceGroupService.canonical(getProjectDir(p).getPath()))).toList();
+        executePlan(targets, type, command,
                 getJavaHomeForWorkspace(workspace), excluded, workspace);
     }
 
@@ -184,7 +189,7 @@ public class BuildService {
                             List<MavenProject> pending=projects.subList(index,projects.size());
                             String continuationId=null;
                             if (!canceledRuns.contains(runId)) continuationId=continuations.register(new BuildContinuationRegistry.Plan(
-                                workspaceId,runId,pending.stream().map(p->new BuildContinuationRegistry.Target(p.getId(),getProjectDir(p).getAbsolutePath())).toList(),command,javaHome,skipped));
+                                workspaceId,runId,pending.stream().map(p->new BuildContinuationRegistry.Target(p.getId(),getProjectDir(p).getAbsolutePath(),p.getContextGroupId())).toList(),command,javaHome,skipped));
                             notificationService.publishBuildFailure(new BuildFailure(project.getDisplayName(),project.getId(),pending.stream().map(MavenProject::getId).toList(),workspaceId,runId,continuationId),workspaceId,workspaceName);
                         } else succeeded.add(project.getDisplayName());
                         return code;
@@ -205,12 +210,15 @@ public class BuildService {
 
     public record ContinuationResult(String state, String message) { }
     public ContinuationResult continueBuild(Long workspaceId,String continuationId,String mode) {
-        final java.util.Map<Long,MavenProject> current=workspaceService.getProjectsForWorkspace(workspaceId,false).stream()
+        final java.util.Map<Long,MavenProject> current=(workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId,false)
+            : workspaceGroups.composition(workspaceId).all()).stream()
             .collect(java.util.stream.Collectors.toMap(MavenProject::getId,p->p));
         BuildContinuationRegistry.Plan plan=continuations.accept(workspaceId,continuationId,mode,value->{
             for (var target:value.pending()) {
                 MavenProject project=current.get(target.id());
-                if (project==null || project.getWorkspace()==null || !workspaceId.equals(project.getWorkspace().getId())
+                if (project==null || project.getWorkspace()==null
+                        || !(workspaceId.equals(project.getWorkspace().getId()) || workspaceId.equals(project.getConsumerWorkspaceId()))
+                        || !java.util.Objects.equals(target.groupId(), project.getContextGroupId())
                         || !project.isMaven() || !getProjectDir(project).isDirectory() || !new File(getProjectDir(project),"pom.xml").isFile()
                         || !getProjectDir(project).getAbsolutePath().equals(target.directory()))
                     throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,"The original build queue changed or is unavailable. Review the workspace and start a fresh build.");
@@ -222,7 +230,7 @@ public class BuildService {
         if (pending.stream().noneMatch(MavenProject::isEnabled)) {
             String message="No remaining projects. Skipped: " + String.join(", ",skipped) + ". The original build remains failed.";
             messagingTemplate.convertAndSend("/topic/logs",new LogMessage("Build",message));
-            Workspace workspace=current.get(plan.pending().getFirst().id()).getWorkspace();
+            Workspace workspace=workspaceService.getWorkspace(workspaceId).orElse(current.get(plan.pending().getFirst().id()).getWorkspace());
             notificationService.recordLocal(new net.olaba.mvnbuilder.model.LocalNotificationRequest("info","No remaining projects",message,workspaceId,workspace.getName()));
             return new ContinuationResult("empty",message);
         }
@@ -240,7 +248,7 @@ public class BuildService {
      * @param workspaceId The workspace ID.
      */
     public void buildWorkspaceSequentially(final Long workspaceId) {
-        final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
+        final List<MavenProject> projects = workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId, true) : workspaceGroups.buildOrder(workspaceId);
         buildProjectsSequentially(projects, BuildRunType.FULL);
     }
 
@@ -252,9 +260,15 @@ public class BuildService {
      * @param mode selection direction
      */
     public void buildWorkspaceRange(final Long workspaceId, final Long projectId, final BuildRangeMode mode) {
-        final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(workspaceId, true);
+        final List<MavenProject> projects = workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId, true) : workspaceGroups.composition(workspaceId).roots();
         final BuildRunType type = mode == BuildRangeMode.ONLY ? BuildRunType.PROJECT : BuildRunType.RANGE;
-        buildProjectsSequentially(selectBuildRange(projects, projectId, mode), type);
+        MavenProject selected = (workspaceGroups == null ? projects : workspaceGroups.scope(workspaceId, null, List.of(projectId), true)).stream()
+            .filter(p -> p.getId().equals(projectId)).findFirst().orElseThrow(() -> new IllegalArgumentException("Project does not belong to the workspace."));
+        boolean nestedModule = projects.stream().noneMatch(p -> p.getId().equals(projectId));
+        List<MavenProject> scoped = workspaceGroups == null ? projects
+            : workspaceGroups.scope(workspaceId, selected.getContextGroupId(), null, nestedModule);
+        if (mode == BuildRangeMode.ONLY) buildProjectsSequentially(List.of(selected), type);
+        else buildProjectsSequentially(selectBuildRange(scoped, projectId, mode), type);
     }
 
     /**
@@ -357,7 +371,7 @@ public class BuildService {
     public void bulkGitFetch(final List<MavenProject> projects) {
         final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
         final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
-        for (final MavenProject project : projects) {
+        for (final MavenProject project : gitTargets(projects)) {
             if (!project.isEnabled()) continue;
             enabledProjects.add(project);
             final File projectDir = getProjectDir(project);
@@ -390,7 +404,7 @@ public class BuildService {
         final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
         final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
 
-        for (final MavenProject project : projects) {
+        for (final MavenProject project : gitTargets(projects)) {
             if (!project.isEnabled()) continue;
             enabledProjects.add(project);
             final File projectDir = getProjectDir(project);
@@ -466,20 +480,7 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitDiscard(final List<MavenProject> projects) {
-        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
-        for (final MavenProject project : projects) {
-            if (!project.isEnabled()) continue;
-            final File projectDir = getProjectDir(project);
-            futures.add(processExecutionService.executeCommand(project.getDisplayName(), projectDir, "git", "checkout", "--", "."));
-        }
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .thenRun(() -> {
-                final ActionSummary summary = ActionSummary.builder()
-                        .withAction("git-discard")
-                        .withSuccess(true)
-                        .build();
-                publishSummary(summary, projects);
-            });
+        bulkGitChange(projects, "git-discard", "git", "checkout", "--", ".");
     }
 
     /**
@@ -488,20 +489,7 @@ public class BuildService {
      * @param projects The list of projects.
      */
     public void bulkGitUnstage(final List<MavenProject> projects) {
-        final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
-        for (final MavenProject project : projects) {
-            if (!project.isEnabled()) continue;
-            final File projectDir = getProjectDir(project);
-            futures.add(processExecutionService.executeCommand(project.getDisplayName(), projectDir, "git", "restore", "--staged", "."));
-        }
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .thenRun(() -> {
-                final ActionSummary summary = ActionSummary.builder()
-                        .withAction("git-unstage")
-                        .withSuccess(true)
-                        .build();
-                publishSummary(summary, projects);
-            });
+        bulkGitChange(projects, "git-unstage", "git", "restore", "--staged", ".");
     }
 
     /**
@@ -514,7 +502,7 @@ public class BuildService {
     public void bulkGitStash(final List<MavenProject> projects, final boolean includeUntracked) {
         final List<MavenProject> enabledProjects = new java.util.ArrayList<>();
         final List<CompletableFuture<CommandResult>> futures = new java.util.ArrayList<>();
-        for (final MavenProject project : projects) {
+        for (final MavenProject project : gitTargets(projects)) {
             if (!project.isEnabled()) continue;
             final File projectDir = getProjectDir(project);
             enabledProjects.add(project);
@@ -547,6 +535,53 @@ public class BuildService {
      * @param project The Maven project.
      * @return The directory File object.
      */
+    private void bulkGitChange(List<MavenProject> projects, String action, String... command) {
+        List<MavenProject> targets = gitTargets(projects);
+        List<CompletableFuture<CommandResult>> futures = targets.stream()
+            .map(p -> processExecutionService.executeCommand(p.getDisplayName(),getProjectDir(p),command)
+                .exceptionally(error -> new CommandResult(-1,List.of()))).toList();
+        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).thenRun(() -> {
+            List<String> failed = new java.util.ArrayList<>();
+            for (int i=0;i<targets.size();i++) if (futures.get(i).join().getExitCode()!=0) failed.add(targets.get(i).getDisplayName());
+            publishSummary(ActionSummary.builder().withAction(action).withSuccess(failed.isEmpty()).withFailedProjects(failed).build(),projects);
+        });
+    }
+
+    /** Resolve repository roots once per action, retaining independent worktrees. */
+    public static List<MavenProject> gitTargets(List<MavenProject> projects) {
+        java.util.Map<String, MavenProject> unique = new java.util.LinkedHashMap<>();
+        for (MavenProject p : projects) {
+            if (!p.isEnabled()) continue;
+            String path = p.getAbsolutePath();
+            if (path == null && p.getWorkspace() != null && p.getWorkspace().getBasePath() != null)
+                path = new File(p.getWorkspace().getBasePath(), p.getRelativePath()).getPath();
+            if (path == null) continue;
+            File root = gitRoot(new File(path));
+            if (p.getConsumerWorkspaceId() != null && root == null) continue;
+            String key = WorkspaceGroupService.canonical(root == null ? path : root.getPath());
+            MavenProject target = p;
+            if (root != null) {
+                target = WorkspaceGroupService.projectView(p, p.getConsumerWorkspaceId(), null);
+                target.setContextGroupId(p.getContextGroupId()); target.setImported(p.isImported()); target.setEnabled(p.isEnabled());
+                target.setAbsolutePath(key);
+            }
+            unique.putIfAbsent(key, target);
+        }
+        return List.copyOf(unique.values());
+    }
+
+    private static File gitRoot(File directory) {
+        if (!directory.isDirectory()) return null;
+        try {
+            Process command = new ProcessBuilder("git", "rev-parse", "--show-toplevel").directory(directory)
+                .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            if (!command.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) { command.destroyForcibly(); return null; }
+            String result = new String(command.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).stripTrailing();
+            return command.exitValue() == 0 && !result.isBlank() ? new File(result) : null;
+        } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return null; }
+        catch (java.io.IOException unavailable) { return null; }
+    }
+
     private File getProjectDir(final MavenProject project) {
         if (project.getAbsolutePath() != null) {
             return new File(project.getAbsolutePath());

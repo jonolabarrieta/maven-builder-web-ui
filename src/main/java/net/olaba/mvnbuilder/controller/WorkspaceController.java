@@ -30,6 +30,28 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 @Slf4j
 public class WorkspaceController {
+    @org.springframework.beans.factory.annotation.Autowired
+    private WorkspaceGroupService workspaceGroups;
+
+    private MavenProject contextualProject(Long id) {
+        var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (workspaceGroups != null && attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
+            String consumer = servlet.getRequest().getParameter("consumerId");
+            String group = servlet.getRequest().getParameter("contextGroupId");
+            if (consumer != null) return workspaceGroups.project(Long.valueOf(consumer), group == null || group.isBlank() ? null : Long.valueOf(group), id);
+        }
+        return mavenProjectRepository.findById(id).orElseThrow();
+    }
+    private void saveBranch(MavenProject view) {
+        MavenProject source = mavenProjectRepository.findById(view.getId()).orElseThrow();
+        source.setGitBranch(view.getGitBranch()); mavenProjectRepository.save(source);
+    }
+    @ModelAttribute
+    public void projectContext(jakarta.servlet.http.HttpServletRequest request, Model model) {
+        model.addAttribute("consumerId", request.getParameter("consumerId"));
+        model.addAttribute("contextGroupId", request.getParameter("contextGroupId"));
+    }
+
 
     private final WorkspaceService workspaceService;
     private final BuildService buildService;
@@ -62,7 +84,8 @@ public class WorkspaceController {
      */
     @GetMapping
     public String index(final Model model) {
-        model.addAttribute("workspaces", workspaceService.getAllWorkspaces());
+        model.addAttribute("workspaces", workspaceService.getAllWorkspaces().stream().filter(ws -> !ws.isParent()).toList());
+        model.addAttribute("parentTab", false);
         final String favoritePath = systemSettingService.getSettings().getFavoritePath();
         model.addAttribute("favoritePath", favoritePath != null ? favoritePath : "");
         model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
@@ -122,8 +145,9 @@ public class WorkspaceController {
      */
     @PostMapping("/workspaces/{id}/delete")
     public String deleteWorkspace(final @PathVariable Long id) {
+        boolean parent = workspaceService.getWorkspace(id).orElseThrow().isParent();
         workspaceService.deleteWorkspace(id);
-        return "redirect:/";
+        return parent ? "redirect:/parent-workspaces" : "redirect:/";
     }
 
     /**
@@ -149,6 +173,10 @@ public class WorkspaceController {
     public String viewWorkspace(final @PathVariable Long id, final Model model) {
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
         model.addAttribute("workspace", workspace);
+        if (workspaceGroups != null) {
+            model.addAttribute("parents", workspaceGroups.parents());
+            model.addAttribute("consumers", workspaceGroups.consumers(id));
+        }
         addProjectTableModel(id, model);
         model.addAttribute("javaInstallations", javaInstallationRepository.findAll());
         return "workspace-detail";
@@ -161,9 +189,30 @@ public class WorkspaceController {
      * @param model model to populate
      */
     private void addProjectTableModel(final Long id, final Model model) {
-        final WorkspaceProjectHierarchy hierarchy = workspaceService.getProjectHierarchyForWorkspace(id);
-        model.addAttribute("projects", hierarchy.topLevelProjects());
-        model.addAttribute("projectIdsWithChildren", hierarchy.projectIdsWithChildren());
+        if (workspaceGroups == null) {
+            final WorkspaceProjectHierarchy hierarchy = workspaceService.getProjectHierarchyForWorkspace(id);
+            model.addAttribute("projects", hierarchy.topLevelProjects());
+            model.addAttribute("projectIdsWithChildren", hierarchy.projectIdsWithChildren());
+            model.addAttribute("blocks", hierarchy.topLevelProjects().stream().map(p -> new WorkspaceGroupService.Block("p:" + p.getId(), null, List.of(p))).toList());
+            model.addAttribute("groups", List.of()); model.addAttribute("parents", List.of()); model.addAttribute("consumers", List.of());
+            return;
+        }
+        var composition = workspaceGroups.composition(id);
+        model.addAttribute("projects", composition.roots());
+        model.addAttribute("blocks", composition.blocks());
+        model.addAttribute("groups", workspaceGroups.list(id));
+        model.addAttribute("parents", workspaceGroups.parents());
+        var children = new java.util.HashSet<Long>();
+        var owners = composition.all().stream().map(p -> p.getWorkspace().getId()).distinct().toList();
+        for (Long owner : owners) children.addAll(workspaceService.getProjectHierarchyForWorkspace(owner).projectIdsWithChildren());
+        model.addAttribute("projectIdsWithChildren", children);
+    }
+
+    @GetMapping("/workspaces/{id}/project-table")
+    public String projectTable(@PathVariable Long id, Model model) {
+        model.addAttribute("workspace", workspaceService.getWorkspace(id).orElseThrow());
+        addProjectTableModel(id, model);
+        return "workspace-detail :: project-table-body";
     }
 
     /** One branch update addressed by the immutable project identifier. */
@@ -179,6 +228,11 @@ public class WorkspaceController {
     @ResponseBody
     public List<GitBranchUpdate> getGitStatusTable(final @PathVariable Long id) {
         log.info("Asynchronously refreshing Git status for workspace ID {}", id);
+        if (workspaceGroups != null) {
+            var sources = workspaceGroups.composition(id).roots().stream().map(p -> p.getWorkspace().getId()).distinct().toList();
+            sources.forEach(workspaceService::refreshGitStatus);
+            return workspaceGroups.composition(id).roots().stream().map(p -> new GitBranchUpdate(p.getId(), p.getGitBranch())).toList();
+        }
         return workspaceService.refreshGitStatus(id).stream()
                 .map(project -> new GitBranchUpdate(project.getId(), project.getGitBranch()))
                 .toList();
@@ -193,7 +247,8 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/delete")
     @ResponseBody
     public ResponseEntity<Void> deleteProject(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
+        if (project.isImported()) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Edit imported membership in the parent workspace.");
         final Long workspaceId = project.getWorkspace().getId();
         log.info("Deleting project '{}' and its children from workspace {}", project.getArtifactId(), workspaceId);
         workspaceService.deleteProject(id);
@@ -261,6 +316,8 @@ public class WorkspaceController {
     @PostMapping("/workspaces/{id}/update-order")
     @ResponseBody
     public ResponseEntity<String> updateOrder(final @PathVariable Long id, final @RequestBody List<Long> projectIds) {
+        if (workspaceGroups != null && !workspaceGroups.list(id).isEmpty())
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Use the group and block ordering controls.");
         workspaceService.updateProjectOrder(id, projectIds);
         return ResponseEntity.ok("Success");
     }
@@ -281,15 +338,13 @@ public class WorkspaceController {
         if (!java.util.Set.of("build", "fetch", "pull", "checkout-discard", "restore-staged", "stash").contains(action)) {
             log.warn("Unknown bulk action: {}", action); return;
         }
-        final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
-        final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
-                .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
-        if (projectIds.stream().anyMatch(projectId -> !projectMap.containsKey(projectId) || projectMap.get(projectId).getWorkspace() == null || !id.equals(projectMap.get(projectId).getWorkspace().getId())))
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Every project must belong to this workspace.");
-        final List<MavenProject> projects = projectIds.stream().distinct()
-                .map(projectMap::get)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toList());
+        final List<MavenProject> projects;
+        if (workspaceGroups != null) projects = workspaceGroups.scope(id, null, projectIds, false);
+        else {
+            projects = mavenProjectRepository.findAllById(projectIds);
+            if (projects.size() != new java.util.HashSet<>(projectIds).size() || projects.stream().anyMatch(p -> p.getWorkspace() == null || !id.equals(p.getWorkspace().getId())))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Every project must belong to this workspace.");
+        }
 
         switch (action) {
             case "build":
@@ -324,7 +379,7 @@ public class WorkspaceController {
      */
     @GetMapping("/workspaces/{id}/export-order")
     public ResponseEntity<String> exportOrder(final @PathVariable Long id) {
-        final List<MavenProject> projects = workspaceService.getProjectsForWorkspace(id, true);
+        final List<MavenProject> projects = workspaceGroups == null ? workspaceService.getProjectsForWorkspace(id, true) : workspaceGroups.buildOrder(id);
         final StringBuilder sb = new StringBuilder();
         for (final MavenProject project : projects) {
             if (!project.isMaven()) continue;
@@ -364,8 +419,8 @@ public class WorkspaceController {
     @GetMapping("/workspaces/{id}/export-paths")
     public ResponseEntity<String> exportWorkspacePaths(final @PathVariable Long id) {
         final Workspace workspace = workspaceService.getWorkspace(id).orElseThrow();
-        final String content = workspaceService.getProjectsForWorkspace(id, true).stream()
-                .map(this::absoluteProjectPath)
+        final String content = (workspaceGroups == null ? workspaceService.getProjectsForWorkspace(id, true) : workspaceGroups.buildOrder(id)).stream()
+                .map(this::absoluteProjectPath).map(WorkspaceGroupService::canonical).distinct()
                 .collect(java.util.stream.Collectors.joining("\n"));
         final String safeName = workspace.getName().replaceAll("[^a-zA-Z0-9-_]", "_");
 
@@ -420,21 +475,18 @@ public class WorkspaceController {
             final @RequestParam(required = false, defaultValue = "false") boolean createNew) {
         log.info("Bulk checkout to branch '{}' (create: {}) for workspace {}, project IDs: {}", branch, createNew, id, projectIds);
         
-        final List<MavenProject> unsortedProjects = mavenProjectRepository.findAllById(projectIds);
-        final java.util.Map<Long, MavenProject> projectMap = unsortedProjects.stream()
-                .collect(java.util.stream.Collectors.toMap(MavenProject::getId, java.util.function.Function.identity()));
-        final List<MavenProject> projects = projectIds.stream()
-                .map(projectMap::get)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toList());
+        final List<MavenProject> projects = workspaceGroups == null ? mavenProjectRepository.findAllById(projectIds)
+            : workspaceGroups.scope(id, null, projectIds, false);
+        if (workspaceGroups == null && projects.stream().anyMatch(p -> !id.equals(p.getWorkspace().getId())))
+            return ResponseEntity.badRequest().body("Every project must belong to this workspace.");
 
         final List<MavenProject> succeededProjects = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         final List<String> failed = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         final List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
 
-        for (final MavenProject project : projects) {
+        for (final MavenProject project : BuildService.gitTargets(projects)) {
             if (!project.isEnabled()) continue;
-            final File projectDir = new File(new File(project.getWorkspace().getBasePath()), project.getRelativePath());
+            final File projectDir = new File(absoluteProjectPath(project));
             futures.add(CompletableFuture.runAsync(() -> {
                 try {
                     if (createNew) {
@@ -454,7 +506,7 @@ public class WorkspaceController {
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         if (!succeededProjects.isEmpty()) {
-            mavenProjectRepository.saveAll(succeededProjects);
+            succeededProjects.forEach(this::saveBranch);
         }
 
         if (!failed.isEmpty()) {
@@ -471,7 +523,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/build")
     @ResponseBody
     public void buildProject(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         requireMaven(project);
         buildService.buildProject(project);
     }
@@ -505,7 +557,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/open-vscode")
     @ResponseBody
     public ResponseEntity<String> openVsCode(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final File projectDirectory = projectDirectory(project);
         if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         final String absolutePath = projectDirectory.getAbsolutePath();
@@ -528,7 +580,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/open-explorer")
     @ResponseBody
     public ResponseEntity<String> openExplorer(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final File projectDirectory = projectDirectory(project);
         if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         final String absolutePath = projectDirectory.getAbsolutePath();
@@ -551,7 +603,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/open-terminal")
     @ResponseBody
     public ResponseEntity<String> openTerminal(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final File projectDirectory = projectDirectory(project);
         if (!projectDirectory.isDirectory()) return ResponseEntity.badRequest().body("Project directory is unavailable: " + projectDirectory);
         try {
@@ -596,7 +648,8 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/toggle-enabled")
     @ResponseBody
     public ResponseEntity<Boolean> toggleEnabled(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
+        if (project.getConsumerWorkspaceId() != null) return ResponseEntity.ok(workspaceGroups.toggle(project.getConsumerWorkspaceId(), project.getContextGroupId(), id));
         project.setEnabled(!project.isEnabled());
         mavenProjectRepository.save(project);
         return ResponseEntity.ok(project.isEnabled());
@@ -610,7 +663,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/fetch")
     @ResponseBody
     public void fetchProject(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         buildService.gitFetch(project);
     }
 
@@ -622,7 +675,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/pull")
     @ResponseBody
     public void pullProject(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         buildService.gitPull(project);
     }
 
@@ -635,7 +688,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/git/unstage")
     @ResponseBody
     public ResponseEntity<String> unstageProject(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         log.info("Unstaging changes for project '{}' (id={})", project.getArtifactId(), id);
         try {
             buildService.gitUnstage(project);
@@ -655,7 +708,7 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/git/discard")
     @ResponseBody
     public ResponseEntity<String> discardProjectChanges(final @PathVariable Long id) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         log.info("Discarding changes for project '{}' (id={})", project.getArtifactId(), id);
         try {
             buildService.gitDiscard(project);
@@ -675,9 +728,9 @@ public class WorkspaceController {
      */
     @GetMapping("/projects/{id}/branches")
     public String getBranches(final @PathVariable Long id, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final Workspace workspace = project.getWorkspace();
-        final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
+        final File projectDir = new File(absoluteProjectPath(project));
         final var branches = gitService.listReferences(projectDir, GitService.ReferenceType.LOCAL);
         final var remoteBranches = gitService.listReferences(projectDir, GitService.ReferenceType.REMOTE);
         final var tags = gitService.listReferences(projectDir, GitService.ReferenceType.TAG);
@@ -705,9 +758,9 @@ public class WorkspaceController {
     @PostMapping("/projects/{id}/branches/fetch")
     public String fetchAndReloadBranches(final @PathVariable Long id, final Model model) {
         log.info("Request to fetch git references and reload branch modal for project ID {}", id);
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final Workspace workspace = project.getWorkspace();
-        final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
+        final File projectDir = new File(absoluteProjectPath(project));
         
         try {
             gitService.fetch(projectDir);
@@ -731,14 +784,14 @@ public class WorkspaceController {
     public ResponseEntity<String> checkoutBranch(final @PathVariable Long id, final @RequestParam String branch,
             final @RequestParam(required = false) String referenceType) {
         log.info("Request to checkout branch '{}' for project ID {}", branch, id);
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final Workspace workspace = project.getWorkspace();
-        final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
+        final File projectDir = new File(absoluteProjectPath(project));
 
         try {
             final var current = gitService.checkoutReference(projectDir, branch, referenceType);
             project.setGitBranch(current.getLabel());
-            mavenProjectRepository.save(project);
+            saveBranch(project);
             return ResponseEntity.ok("Success");
         } catch (final IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -761,14 +814,14 @@ public class WorkspaceController {
     @ResponseBody
     public ResponseEntity<String> createBranch(final @PathVariable Long id, final @RequestParam String branch) {
         log.info("Request to create branch '{}' for project ID {}", branch, id);
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final Workspace workspace = project.getWorkspace();
-        final File projectDir = new File(new File(workspace.getBasePath()), project.getRelativePath());
+        final File projectDir = new File(absoluteProjectPath(project));
 
         try {
             gitService.createBranch(projectDir, branch);
             project.setGitBranch(branch);
-            mavenProjectRepository.save(project);
+            saveBranch(project);
             return ResponseEntity.ok("Success");
         } catch (final Exception e) {
             log.error("Failed to create branch: {}", e.getMessage());
@@ -785,7 +838,7 @@ public class WorkspaceController {
      */
     @GetMapping("/projects/{id}/m2")
     public String getM2Info(final @PathVariable Long id, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         requireMaven(project);
         final M2ProjectInfo m2Info = mavenRepositoryService.getProjectInfo(project.getId(), project.getGroupId(),
                 project.getArtifactId());
@@ -815,7 +868,7 @@ public class WorkspaceController {
      */
     @PostMapping("/projects/{id}/m2/delete-version")
     public String deleteM2Version(final @PathVariable Long id, final @RequestParam String version, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         requireMaven(project);
         log.info("Deleting M2 version {} for project {}", version, project.getArtifactId());
 
@@ -844,7 +897,7 @@ public class WorkspaceController {
      */
     @PostMapping("/projects/{id}/m2/delete-all")
     public String deleteM2Project(final @PathVariable Long id, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         requireMaven(project);
         log.info("Deleting ALL M2 versions for project {}", project.getArtifactId());
 
@@ -873,7 +926,7 @@ public class WorkspaceController {
      */
     @GetMapping("/projects/{id}/children")
     public String getProjectChildren(final @PathVariable Long id, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         final List<MavenProject> allProjects = workspaceService.getProjectsForWorkspace(project.getWorkspace().getId(),
                 false);
 
@@ -1024,7 +1077,7 @@ public class WorkspaceController {
      */
     @GetMapping("/projects/{id}/properties")
     public String getProjectProperties(final @PathVariable Long id, final Model model) {
-        final MavenProject project = mavenProjectRepository.findById(id).orElseThrow();
+        final MavenProject project = contextualProject(id);
         requireMaven(project);
         final java.util.Properties projectProps = mavenService.getProjectProperties(project);
         final java.util.Properties parentProps = project.getParentKey() != null 

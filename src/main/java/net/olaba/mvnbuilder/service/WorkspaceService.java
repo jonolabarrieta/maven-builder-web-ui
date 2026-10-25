@@ -27,6 +27,16 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class WorkspaceService {
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private WorkspaceGroupService groups;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private WorkspaceExchangeService exchange;
+
+    public String currentBranch(File directory) { return gitService.getCurrentBranch(directory); }
+
 
     private final WorkspaceRepository workspaceRepository;
     private final MavenProjectRepository mavenProjectRepository;
@@ -126,6 +136,7 @@ public class WorkspaceService {
 
         if (pathChanged && basePath != null) {
             // Re-scan projects if path changed
+            if (groups != null) groups.projectRemoved(id, mavenProjectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(id).stream().map(MavenProject::getId).toList());
             mavenProjectRepository.deleteByWorkspaceId(id);
             scanAndImportProjects(savedWorkspace);
         }
@@ -140,6 +151,7 @@ public class WorkspaceService {
      */
     @Transactional
     public void deleteWorkspace(final Long id) {
+        if (groups != null) groups.beforeDelete(id);
         workspaceRepository.deleteById(id);
     }
 
@@ -163,9 +175,12 @@ public class WorkspaceService {
     @Transactional
     public Workspace duplicateWorkspace(final Long id) {
         final Workspace original = workspaceRepository.findById(id).orElseThrow();
+        final Map<Long, Long> copiedIds = new HashMap<>();
 
         Workspace copy = Workspace.builder()
                 .withName(original.getName() + " (Copy)")
+                .withKind(original.getKind())
+                .withJavaInstallation(original.getJavaInstallation())
                 .withBasePath(original.getBasePath())
                 .build();
         copy.getExcludedPaths().addAll(original.getExcludedPaths());
@@ -188,9 +203,11 @@ public class WorkspaceService {
             projectCopy.getModules().addAll(originalProject.getModules());
             projectCopy.getInternalDependencies().addAll(originalProject.getInternalDependencies());
             projectCopy.setWorkspace(copy);
-            mavenProjectRepository.save(projectCopy);
+            projectCopy = mavenProjectRepository.save(projectCopy);
+            copiedIds.put(originalProject.getId(), projectCopy.getId());
         }
 
+        if (groups != null) groups.copyLayout(id, copy, copiedIds);
         return copy;
     }
 
@@ -222,6 +239,7 @@ public class WorkspaceService {
             }
         }
 
+        if (groups != null) groups.projectRemoved(workspaceId, toDelete.stream().map(MavenProject::getId).toList());
         mavenProjectRepository.deleteAll(toDelete);
     }
 
@@ -611,9 +629,6 @@ public class WorkspaceService {
     public List<MavenProject> refreshGitStatus(final Long workspaceId) {
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
-        if (workspace.getBasePath() == null) {
-            return projects;
-        }
 
         final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
         final List<MavenProject> updatedProjects = new java.util.ArrayList<>();
@@ -623,6 +638,7 @@ public class WorkspaceService {
             if (project.getAbsolutePath() != null) {
                 projectDir = new File(project.getAbsolutePath());
             } else {
+                if (workspace.getBasePath() == null || project.getRelativePath() == null) continue;
                 final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
                 projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
             }
@@ -670,6 +686,7 @@ public class WorkspaceService {
                 }
             }
         }
+        if (groups != null) groups.synchronizeUngroupedOrder(workspaceId);
     }
 
     /**
@@ -748,6 +765,7 @@ public class WorkspaceService {
      */
     @Transactional(readOnly = true)
     public String exportWorkspace(final Long workspaceId) {
+        if (exchange != null && groups != null && (groups.workspace(workspaceId).isParent() || !groups.list(workspaceId).isEmpty())) return exchange.export(workspaceId);
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         final StringBuilder sb = new StringBuilder();
         
@@ -781,7 +799,12 @@ public class WorkspaceService {
      * @param textContent The plain text configuration.
      * @return The created workspace.
      */
+    @Transactional
     public Workspace importWorkspace(final String textContent) {
+        if (textContent.startsWith("MvnBuilderWorkspace:")) {
+            if (exchange == null) throw new IllegalArgumentException("Grouped workspace import is unavailable.");
+            return exchange.read(textContent.replace("\r\n", "\n"));
+        }
         String name = "Imported Workspace";
         String basePath = null;
         final List<String> excludedPaths = new ArrayList<>();

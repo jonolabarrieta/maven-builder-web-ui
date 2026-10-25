@@ -14,6 +14,7 @@ import java.util.Optional;
  */
 @Repository
 public interface MavenProjectRepository extends JpaRepository<MavenProject, Long> {
+    List<MavenProject> findByWorkspaceIdInOrderByExecutionOrderAsc(java.util.Collection<Long> ids);
 
     /**
      * Finds all projects belonging to a workspace, ordered by their execution

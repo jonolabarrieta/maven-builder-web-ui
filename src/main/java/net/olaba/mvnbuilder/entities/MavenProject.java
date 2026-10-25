@@ -22,6 +22,10 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MavenProject {
+    @Transient private Long contextGroupId;
+    @Transient private Long consumerWorkspaceId;
+    @Transient private boolean imported;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "varchar(16) default 'MAVEN'")
     @Builder.Default
@@ -74,6 +78,7 @@ public class MavenProject {
     private boolean enabled = true;
 
     /** List of child module names defined in the project. */
+    @org.hibernate.annotations.BatchSize(size = 128)
     @ElementCollection
     @CollectionTable(name = "project_modules", joinColumns = @JoinColumn(name = "project_id"))
     @Column(name = "module_name")
@@ -81,6 +86,7 @@ public class MavenProject {
     private List<String> modules = new ArrayList<>();
 
     /** List of internal project dependencies in "groupId:artifactId" format. */
+    @org.hibernate.annotations.BatchSize(size = 128)
     @ElementCollection
     @CollectionTable(name = "project_dependencies", joinColumns = @JoinColumn(name = "project_id"))
     @Column(name = "dependency_id") // stored as "groupId:artifactId"

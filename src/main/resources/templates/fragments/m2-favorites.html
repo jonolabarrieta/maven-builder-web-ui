@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <body>
-    <div th:fragment="m2-favorites-list" id="m2-favorites-content">
+    <div th:fragment="m2-favorites-list" id="m2-favorites-content" th:attr="data-consumer-id=${consumerId},data-context-group-id=${contextGroupId}">
         <div th:if="${favorites.empty}" class="text-center py-6 text-muted text-sm">
             No favorite folders configured.
         </div>

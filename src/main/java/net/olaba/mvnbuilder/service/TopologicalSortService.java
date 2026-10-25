@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class TopologicalSortService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private WorkspaceGroupService groups;
 
     private final MavenProjectRepository mavenProjectRepository;
     private final WorkspaceService workspaceService;
@@ -241,6 +243,7 @@ public class TopologicalSortService {
                             .map(k -> rootName(k, parentProjects))
                             .collect(Collectors.joining(", ")));
         }
+        if (groups != null) groups.synchronizeUngroupedOrder(workspaceId);
     }
 
     /**

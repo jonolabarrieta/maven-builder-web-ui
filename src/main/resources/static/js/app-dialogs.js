@@ -13,7 +13,9 @@
         'directory-explorer-modal': 'Choose base folder',
         'children-modal': 'Project Submodules',
         'project-properties-modal': 'Project Properties',
-        'profile-manager-modal': 'Manage Build Profiles'
+        'profile-manager-modal': 'Manage Build Profiles',
+        'group-modal': 'Project Group',
+        'parent-workspaces-modal': 'Parent Workspaces'
     };
     const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), '
         + 'select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';

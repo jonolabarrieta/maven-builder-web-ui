@@ -20,6 +20,22 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Workspace {
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(16) default 'NORMAL'")
+    @Builder.Default
+    private WorkspaceKind kind = WorkspaceKind.NORMAL;
+
+    public WorkspaceKind getKind() { return kind == null ? WorkspaceKind.NORMAL : kind; }
+    public boolean isParent() { return getKind() == WorkspaceKind.PARENT; }
+
+    /** Ordered blocks: p:<owned root id> or g:<group id>. Empty legacy layouts resolve from executionOrder. */
+    @ElementCollection
+    @CollectionTable(name = "workspace_blocks", joinColumns = @JoinColumn(name = "workspace_id"))
+    @OrderColumn(name = "block_position")
+    @Column(name = "block_key")
+    @Builder.Default
+    private List<String> blocks = new ArrayList<>();
+
     @Transient
     @Builder.Default
     private List<String> importWarnings = new ArrayList<>();

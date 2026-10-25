@@ -40,11 +40,15 @@
                 Import Workspace
             </button>
             <button onclick="document.getElementById('new-workspace-modal').classList.remove('hidden')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-all shadow-md font-medium">
-                + New Workspace
+                <span th:text="${parentTab ? '+ New Parent Workspace' : '+ New Workspace'}">+ New Workspace</span>
             </button>
         </div>
     </nav>
 
+    <nav aria-label="Workspace collections" class="max-w-[1600px] mx-auto px-4 sm:px-6 pt-6 flex gap-3">
+        <a href="/" class="px-3 py-2 rounded-lg font-semibold" th:classappend="${parentTab ? 'text-gray-600' : 'bg-indigo-50 text-indigo-700'}" th:attr="aria-current=${parentTab ? null : 'page'}">Workspaces</a>
+        <a href="/parent-workspaces" class="px-3 py-2 rounded-lg font-semibold" th:classappend="${parentTab ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600'}" th:attr="aria-current=${parentTab ? 'page' : null}">Parent workspaces</a>
+    </nav>
     <main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 sm:py-12 flex flex-col gap-6 sm:gap-8">
         <!-- Error Message Alert -->
         <div th:if="${errorMessage}" class="w-full">
@@ -76,12 +80,16 @@
         <!-- Workspaces Section -->
         <section aria-labelledby="workspaces-heading" class="min-w-0">
             <header class="mb-6 sm:mb-8">
-                <h1 id="workspaces-heading" class="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">Workspaces</h1>
-                <p class="text-muted">Manage and build your Maven project collections.</p>
+                <h1 id="workspaces-heading" th:text="${parentTab ? 'Parent workspaces' : 'Workspaces'}" class="text-3xl sm:text-4xl font-extrabold text-gray-900 mb-2">Workspaces</h1>
+                <p class="text-muted" th:text="${parentTab ? 'Maintain shared project collections. Changes appear in every workspace that imports them.' : 'Manage and build your Maven project collections.'}">Manage and build your Maven project collections.</p>
             </header>
 
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-8">
                 <div th:each="ws : ${workspaces}" class="min-w-0 bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-100 hover:shadow-xl transition-all group">
+                    <p th:if="${parentTab}" class="mb-3 text-sm text-gray-600">
+                        Used by <span th:if="${#lists.isEmpty(parentConsumers[ws.id])}">no workspaces yet</span>
+                        <a th:each="consumer : ${parentConsumers[ws.id]}" th:href="@{/workspaces/{id}(id=${consumer.id})}" th:text="${consumer.name}" class="text-indigo-700 underline mr-2"></a>
+                    </p>
                     <div class="flex justify-between items-start mb-4">
                         <div class="p-3 bg-indigo-50 rounded-xl group-hover:bg-indigo-100 transition-colors text-indigo-600">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -171,14 +179,14 @@
     <div id="new-workspace-modal" class="hidden fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto">
         <div class="bg-white rounded-2xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto shadow-2xl transform transition-all">
             <div class="px-4 sm:px-8 py-4 sm:py-6 border-b border-gray-100 flex justify-between items-center">
-                <h3 class="text-2xl font-bold text-gray-800">New Workspace</h3>
+                <h3 class="text-2xl font-bold text-gray-800" th:text="${parentTab ? 'New Parent Workspace' : 'New Workspace'}">New Workspace</h3>
                 <button type="button" aria-label="Close New Workspace" onclick="document.getElementById('new-workspace-modal').classList.add('hidden')" class="icon-button text-muted hover:text-gray-600">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
-            <form action="/workspaces" method="POST" class="p-4 sm:p-8 space-y-6">
+            <form th:action="${parentTab ? '/parent-workspaces' : '/workspaces'}" method="POST" class="p-4 sm:p-8 space-y-6">
                 <div>
                     <label for="new-workspace-name" class="block text-sm font-semibold text-gray-700 mb-2">Workspace Name</label>
                     <input type="text" id="new-workspace-name" name="name" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all" placeholder="e.g. My Microservices">

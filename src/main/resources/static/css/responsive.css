@@ -132,3 +132,17 @@ body {
 @media (any-pointer: coarse) {
     :root button:active, :root summary:active { filter: brightness(.95); }
 }
+
+/* Group disclosure must override responsive project-card display rules. */
+#project-table-body tr[hidden] { display: none; }
+@media (max-width: 1023px) {
+    #project-table-body tr.workspace-group-header {
+        grid-column: 1 / -1;
+        grid-template-columns: minmax(0, 1fr);
+    }
+    #project-table-body tr.workspace-group-header > td {
+        grid-column: 1 / -1;
+        grid-row: auto;
+        min-width: 0;
+    }
+}
