@@ -26,16 +26,24 @@ public final class GitSelectedCommitService {
             WorkspaceGitDiscoveryService.safePath(repository, selected.path());
             FileChange change = GitChangeService.find(status, selected.path(), selected.area());
             if (change.kind().equals("gitlink")) throw new GitProblem(422, "Commit submodule changes from their own repository.");
-            List<String> pair = new ArrayList<>(List.of(selected.path()));
+            List<String> pair = new ArrayList<>(change.kind().equals("untracked-dir") ? untrackedFiles(repository, selected.path()) : List.of(selected.path()));
+            if (pair.isEmpty()) throw GitProblem.stale();
             if (change.oldPath() != null) { WorkspaceGitDiscoveryService.safePath(repository, change.oldPath()); pair.add(change.oldPath()); }
             for (String path : pair) if (!paths.add(path)) throw new GitProblem(400, "A file can be selected from only one source. Review duplicate or overlapping rename selections.");
             plan.add(new Planned(selected.path(), selected.area(), List.copyOf(pair)));
         }
         return List.copyOf(plan);
     }
+    /** A selected untracked folder contributes exactly the non-ignored files Git reports inside it. */
+    private List<String> untrackedFiles(Resolved repository, String directory) {
+        List<String> files = new ArrayList<>();
+        for (String path : git.run(repository.root(), "ls-files", "--others", "--exclude-standard", "-z", "--", directory).require().text().split("\0"))
+            if (!path.isEmpty()) { WorkspaceGitDiscoveryService.safePath(repository, path); files.add(path); }
+        return files;
+    }
     public void validate(Resolved repository, CommitTarget target) { plan(repository, target); }
     public void commit(Resolved repository, CommitTarget target, String message) {
-        GitMutationCoordinator.mutate(repository.root().toFile(), () -> { commitLocked(repository, target, message); return null; });
+        GitMutationCoordinator.mutate(repository.commonDir(), () -> { commitLocked(repository, target, message); return null; });
     }
     private void commitLocked(Resolved repository, CommitTarget target, String message) {
         List<Planned> plan = plan(repository, target);

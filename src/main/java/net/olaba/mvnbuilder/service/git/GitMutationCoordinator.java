@@ -16,8 +16,9 @@ public final class GitMutationCoordinator {
     public GitMutationCoordinator() { }
     @org.springframework.beans.factory.annotation.Value("${workspace.git.mutation-workers:4}")
     public void configure(int count) { WORKERS = new Semaphore(Math.max(1, count), true); }
-    public static <T> T mutate(File directory, Supplier<T> operation) {
-        Path key = commonDirectory(directory);
+    public static <T> T mutate(File directory, Supplier<T> operation) { return mutate(commonDirectory(directory), operation); }
+    /** Callers that already resolved the canonical Git common directory avoid another rev-parse process. */
+    public static <T> T mutate(Path key, Supplier<T> operation) {
         LockSlot slot = LOCKS.compute(key, (ignored, value) -> { if (value == null) value = new LockSlot(); value.users++; return value; });
         ReentrantLock lock = slot.lock;
         Semaphore workers = WORKERS;

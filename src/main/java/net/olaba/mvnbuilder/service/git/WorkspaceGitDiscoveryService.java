@@ -18,7 +18,14 @@ public class WorkspaceGitDiscoveryService {
     private final GitCommandRunner git;
     private final Map<Long, Map<String, Resolved>> repositories = new ConcurrentHashMap<>();
     private final Map<Long, AtomicLong> generations = new ConcurrentHashMap<>();
+    private record Completed(Path base, Discovery discovery) { }
+    private final Map<Long, Completed> completed = new ConcurrentHashMap<>();
     @Value("${workspace.git.scan-directory-limit:100000}") private long limit = 100000;
+    /** Build output and dependency folders are skipped by name; they rarely hold repositories and can be huge. */
+    private volatile Set<String> excluded = Set.of("target", "node_modules", "build", "dist", "out", ".idea", ".gradle", ".mvn");
+    @Value("${workspace.git.scan-exclude:target,node_modules,build,dist,out,.idea,.gradle,.mvn}") public void configureExclusions(String names) {
+        excluded = Arrays.stream(names.split(",")).map(String::strip).filter(name -> !name.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
     public WorkspaceGitDiscoveryService(GitCommandRunner git) { this.git = git; }
     public Discovery discover(Workspace workspace) {
         long generation = generations.computeIfAbsent(workspace.getId(), ignored -> new AtomicLong()).incrementAndGet();
@@ -30,6 +37,7 @@ public class WorkspaceGitDiscoveryService {
             Files.walkFileTree(base, new SimpleFileVisitor<>() {
                 @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                     if (!dir.equals(base) && dir.getFileName().toString().equalsIgnoreCase(".git")) return FileVisitResult.SKIP_SUBTREE;
+                    if (!dir.equals(base) && excluded.contains(dir.getFileName().toString())) return FileVisitResult.SKIP_SUBTREE;
                     if (Thread.currentThread().isInterrupted()) { complete[0] = false; warnings.add("Repository discovery was interrupted. Refresh repositories."); return FileVisitResult.TERMINATE; }
                     if (++visited[0] > limit) { complete[0] = false; warnings.add("Scan limit reached at " + dir + ". Increase workspace.git.scan-directory-limit and refresh."); return FileVisitResult.TERMINATE; }
                     if (Files.exists(dir.resolve(".git"), LinkOption.NOFOLLOW_LINKS)) {
@@ -48,16 +56,40 @@ public class WorkspaceGitDiscoveryService {
                 }
             });
         } catch (IOException e) { throw new GitProblem(422, "Cannot scan base folder: " + e.getMessage()); }
-        if (generations.get(workspace.getId()).get() == generation) repositories.put(workspace.getId(), Map.copyOf(found));
         var descriptors = found.values().stream().map(Resolved::descriptor).sorted(Comparator.comparing(Repository::path)).toList();
-        return new Discovery(descriptors, List.copyOf(warnings), complete[0], visited[0]);
+        Discovery result = new Discovery(descriptors, List.copyOf(warnings), complete[0], visited[0]);
+        if (generations.get(workspace.getId()).get() == generation) { repositories.put(workspace.getId(), Map.copyOf(found)); completed.put(workspace.getId(), new Completed(base, result)); }
+        return result;
+    }
+    /** The last completed scan for the workspace's current base folder, if any. */
+    public Optional<Discovery> last(Workspace workspace) {
+        Completed last = completed.get(workspace.getId());
+        if (last == null) return Optional.empty();
+        // An unavailable base folder is reported by a fresh scan, not hidden behind an old result.
+        try { return last.base().equals(base(workspace)) ? Optional.of(last.discovery()) : Optional.empty(); }
+        catch (GitProblem e) { return Optional.empty(); }
     }
     public Resolved repository(Workspace workspace, String id) {
         Resolved known = repositories.getOrDefault(workspace.getId(), Map.of()).get(id);
-        if (known == null) throw new GitProblem(404, "Repository is not available in this workspace. Refresh repositories.");
-        Resolved current = resolve(workspace, base(workspace), known.root());
+        if (known == null) throw GitProblem.unknownRepository();
+        Path base = base(workspace);
+        if (unchanged(workspace, base, known)) return known;
+        Resolved current = resolve(workspace, base, known.root());
         if (!current.descriptor().id().equals(id)) throw GitProblem.stale();
         return current;
+    }
+    /** Revalidates a cached identity from filesystem metadata only, without starting Git processes. */
+    private boolean unchanged(Workspace workspace, Path base, Resolved known) {
+        try {
+            Path root = known.root();
+            if (Files.isSymbolicLink(root) || !root.startsWith(base) || !root.toRealPath().equals(root)) return false;
+            if (!Files.exists(root.resolve(".git"), LinkOption.NOFOLLOW_LINKS) || !Files.isDirectory(known.gitDir())) return false;
+            return identity(workspace, base, root, known.gitDir()).equals(known.descriptor().id());
+        } catch (IOException e) { return false; }
+    }
+    private static String identity(Workspace workspace, Path base, Path root, Path gitDir) throws IOException {
+        String key = workspace.getId() + "\0" + base + "\0" + root + "\0" + gitDir + "\0" + Files.readAttributes(gitDir, BasicFileAttributes.class).fileKey();
+        return hash(key.getBytes(StandardCharsets.UTF_8));
     }
     private Resolved resolve(Workspace workspace, Path base, Path candidate) {
         try {
@@ -66,9 +98,8 @@ public class WorkspaceGitDiscoveryService {
             if (!root.equals(candidate.toRealPath()) || !root.startsWith(base)) throw new GitProblem(403, "Candidate is not a workspace repository root.");
             Path gitDir = Path.of(git.text(root, "rev-parse", "--absolute-git-dir")).toRealPath();
             Path common = Path.of(git.text(root, "rev-parse", "--path-format=absolute", "--git-common-dir")).toRealPath();
-            String key = workspace.getId() + "\0" + base + "\0" + root + "\0" + gitDir + "\0" + Files.readAttributes(gitDir, BasicFileAttributes.class).fileKey();
             String relative = base.equals(root) ? "." : base.relativize(root).toString();
-            return new Resolved(new Repository(hash(key.getBytes(StandardCharsets.UTF_8)), root.getFileName().toString(), relative), root, gitDir, common);
+            return new Resolved(new Repository(identity(workspace, base, root, gitDir), root.getFileName().toString(), relative), root, gitDir, common);
         } catch (IOException e) { throw new GitProblem(404, "Repository is no longer accessible. Refresh repositories."); }
     }
     public static Path base(Workspace workspace) {

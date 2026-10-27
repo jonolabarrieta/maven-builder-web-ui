@@ -38,5 +38,43 @@
       "package/LICENSE": "LICENSE",
       "package/Sortable.min.js": "Sortable.min.js"
     }
+  },
+  {
+    "name": "@highlightjs/cdn-assets",
+    "version": "11.12.0",
+    "tarball": "https://registry.npmjs.org/@highlightjs/cdn-assets/-/cdn-assets-11.12.0.tgz",
+    "integrity": "sha512-KvOKXODaiFmId9xaq3xc5xCL66wVLUuOngDbO9B/kewbFTqdGbn2nJxNhN3H5R1cgDTVj6R8vH0zgiNDEGjpDw==",
+    "files": {
+      "package/LICENSE": "LICENSE",
+      "package/highlight.min.js": "highlight.min.js",
+      "package/languages/properties.min.js": "languages/properties.min.js",
+      "package/languages/dockerfile.min.js": "languages/dockerfile.min.js",
+      "package/styles/github.min.css": "styles/github.min.css"
+    }
+  },
+  {
+    "name": "codemirror",
+    "version": "5.65.21",
+    "tarball": "https://registry.npmjs.org/codemirror/-/codemirror-5.65.21.tgz",
+    "integrity": "sha512-6teYk0bA0nR3QP0ihGMoxuKzpl5W80FpnHpBJpgy66NK3cZv5b/d/HY8PnRvfSsCG1MTfr92u2WUl+wT0E40mQ==",
+    "files": {
+      "package/LICENSE": "LICENSE",
+      "package/lib/codemirror.js": "lib/codemirror.js",
+      "package/lib/codemirror.css": "lib/codemirror.css",
+      "package/addon/edit/matchbrackets.js": "addon/edit/matchbrackets.js",
+      "package/addon/selection/active-line.js": "addon/selection/active-line.js",
+      "package/mode/clike/clike.js": "mode/clike/clike.js",
+      "package/mode/javascript/javascript.js": "mode/javascript/javascript.js",
+      "package/mode/xml/xml.js": "mode/xml/xml.js",
+      "package/mode/yaml/yaml.js": "mode/yaml/yaml.js",
+      "package/mode/properties/properties.js": "mode/properties/properties.js",
+      "package/mode/sql/sql.js": "mode/sql/sql.js",
+      "package/mode/css/css.js": "mode/css/css.js",
+      "package/mode/htmlmixed/htmlmixed.js": "mode/htmlmixed/htmlmixed.js",
+      "package/mode/shell/shell.js": "mode/shell/shell.js",
+      "package/mode/markdown/markdown.js": "mode/markdown/markdown.js",
+      "package/mode/python/python.js": "mode/python/python.js",
+      "package/mode/go/go.js": "mode/go/go.js"
+    }
   }
 ]

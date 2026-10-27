@@ -15,8 +15,12 @@ public class GitCommandRunner {
     @Value("${workspace.git.local-timeout-seconds:20}") private int localTimeout = 20;
     @Value("${workspace.git.remote-timeout-seconds:120}") private int remoteTimeout = 120;
     @Value("${workspace.git.output-limit-bytes:8388608}") private int outputLimit = 8388608;
-    private volatile Semaphore reads = new Semaphore(8, true);
-    @Value("${workspace.git.read-workers:8}") public void configureReads(int count) { reads = new Semaphore(Math.max(1, count), true); }
+    // Remote commands (network, hooks) can run for minutes; they never consume local read capacity.
+    private volatile Semaphore reads = new Semaphore(defaultReads(), true);
+    private volatile Semaphore remotes = new Semaphore(4, true);
+    @Value("${workspace.git.read-workers:0}") public void configureReads(int count) { reads = new Semaphore(count > 0 ? count : defaultReads(), true); }
+    @Value("${workspace.git.remote-workers:4}") public void configureRemotes(int count) { remotes = new Semaphore(Math.max(1, count), true); }
+    private static int defaultReads() { return Math.max(8, Runtime.getRuntime().availableProcessors() * 2); }
     private final ExecutorService io = Executors.newVirtualThreadPerTaskExecutor();
     public record Result(int code, byte[] output, String error) {
         public String text() { return new String(output, StandardCharsets.UTF_8); }
@@ -31,7 +35,7 @@ public class GitCommandRunner {
         List<String> command = new ArrayList<>(List.of("git", "-c", "color.ui=false", "-c", "core.quotePath=false"));
         if (args.length > 0 && Set.of("add", "restore", "rm", "ls-files", "diff", "update-index").contains(args[0])) command.add("--literal-pathspecs");
         command.addAll(List.of(args));
-        Process process = null; Semaphore limit = reads; boolean permit = false;
+        Process process = null; Semaphore limit = remote ? remotes : reads; boolean permit = false;
         try {
             limit.acquire(); permit = true;
             ProcessBuilder builder = new ProcessBuilder(command).directory(root.toFile());
