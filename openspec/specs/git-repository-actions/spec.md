@@ -5,29 +5,6 @@ Define repository commits, synchronization, stash, unstage and discard operation
 
 ## Requirements
 
-### Requirement: Explicit repository commit from staged changes
-The system SHALL create a commit for one selected repository using a non-blank user message and the staged snapshot the user reviewed. It SHALL reject the absence of staged changes, unresolved conflicts, and stale staged state; staged deletion of all tracked files SHALL remain a valid change, and before the first commit it SHALL use unborn-HEAD semantics. Commit SHALL not stage additional files, include unstaged edits implicitly, disable configured hooks, or automatically retry after failure. A plain Commit SHALL not push; pushing after commit SHALL happen only when the user explicitly chooses Commit & Push.
-
-#### Scenario: Commit a partially staged file
-- **WHEN** a repository contains staged edits plus additional unstaged/untracked content and the user submits a valid commit
-- **THEN** only staged changes SHALL be committed and all unstaged/untracked content SHALL remain pending without an implicit push.
-
-#### Scenario: Missing message, conflicts, or stale staged contents
-- **WHEN** the user submits a blank message, there are unresolved conflicts, or the staged snapshot has changed
-- **THEN** the commit SHALL not start and the view SHALL identify the reason and preserve the draft.
-
-#### Scenario: First repository commit
-- **WHEN** an unborn repository has staged content and a valid message
-- **THEN** the system SHALL allow its initial commit without requiring a pre-existing HEAD.
-
-#### Scenario: Commit deletion of all tracked files
-- **WHEN** an existing repository has staged deletion of every tracked file
-- **THEN** the system SHALL allow a commit of the empty resulting tree rather than mistake an empty index for an absence of changes.
-
-#### Scenario: Commit fails or user continues typing
-- **WHEN** a hook, signing setup, or Git command fails, or the user edits the draft while a successful commit is running
-- **THEN** the view SHALL preserve the current draft, report the actual outcome, and refresh state; only an unchanged successfully submitted draft SHALL be cleared.
-
 ### Requirement: Repository synchronization actions
 The system SHALL provide fetch, fast-forward-only pull, and normal non-forced push per repository and for explicitly selected repositories. It SHALL honor the user's Git remote/authentication configuration, SHALL not fetch automatically on page entry, and SHALL distinguish missing remote/upstream, divergence, authentication failure, timeout, and successful outcomes. When a pull is refused because of divergence, the system SHALL offer an explicit, confirmed pull with rebase for that repository; rebase SHALL never run without that confirmation, and a rebase that stops on conflicts SHALL be reported with the repository left in Git's rebase state for the user to resolve or abort. When a branch has no upstream, the system SHALL offer an explicit Publish branch action that pushes the current branch to a remote chosen by the user (defaulting to the only remote, or `origin` when several exist) and sets it as upstream.
 
@@ -108,37 +85,49 @@ Long discovery and repository actions SHALL expose workspace-scoped operation id
 - **THEN** the endpoint SHALL reject access rather than expose its paths, logs, or results.
 
 ### Requirement: Commit selected files in one or multiple repositories
-The system SHALL retain the current single-repository staged commit and provide selected-file commits for one or multiple repositories with a common non-blank message. Each repository SHALL produce its own commit and outcome. Files selected from Changes SHALL use working-tree content; files selected from Staged Changes SHALL use index content. The same path SHALL have only one selected source. Unselected files SHALL remain outside the commit, preserving their logical index entries and working-tree contents. Selected staged files with additional unstaged edits SHALL retain those edits.
+The system SHALL commit only the files the user marked, in one or several repositories, with a common non-blank message. Each repository SHALL produce its own commit and outcome. Files marked from Changes SHALL use their working-tree content, and files marked from Staged Changes SHALL use their index content. The same path SHALL have only one marked source. Staged and unstaged content that is not marked SHALL remain outside the commit, keeping its index entries and working-tree contents. Marked staged files with additional unstaged edits SHALL keep those edits. Before running, Commit and Commit & Push SHALL open an application-rendered confirmation dialog that lists each target repository by name with its marked files and states whether a push will follow. Cancelling SHALL run nothing. The confirmed snapshot SHALL be validated before each commit. Commits SHALL support unborn repositories and staged deletion of every tracked file, SHALL not disable configured hooks and SHALL not retry automatically.
 
 #### Scenario: Only some files are committed
-- **WHEN** the user selects two changed files and leaves a third staged file and another unstaged file unselected
-- **THEN** the new commit SHALL contain only the chosen versions of the two selected files, and excluded staging/working-tree contents SHALL be preserved.
+- **WHEN** the user marks two changed files and leaves a third staged file and another unstaged file unmarked
+- **THEN** the new commit SHALL contain only the chosen versions of the two marked files, and the staged and unstaged content that was left out SHALL be kept
+
+#### Scenario: Staged but unmarked file
+- **WHEN** a repository has a staged file that the user did not mark and the user commits other marked files
+- **THEN** the staged file SHALL not be committed and SHALL remain staged
 
 #### Scenario: Select a partially staged file from Staged Changes
-- **WHEN** a selected file has different staged and working-tree versions and is selected from Staged Changes
-- **THEN** the commit SHALL use its staged version and retain its additional working-tree edits.
+- **WHEN** a marked file has different staged and working-tree versions and is marked from Staged Changes
+- **THEN** the commit SHALL use its staged version and retain its additional working-tree edits
 
 #### Scenario: Selected tracked file beneath an ignored directory
-- **WHEN** a file selected from Changes is already tracked in HEAD or the real index and its directory is now ignored
-- **THEN** the commit SHALL use that selected working-tree version without rejecting the ignored parent or adding ignored untracked files nearby, preserving excluded staging.
+- **WHEN** a file marked from Changes is already tracked in HEAD or the real index and its directory is now ignored
+- **THEN** the commit SHALL use that marked working-tree version without rejecting the ignored parent or adding ignored untracked files nearby, preserving excluded staging
 
 #### Scenario: Commit selected files across repositories
-- **WHEN** selected files belong to two repositories and the user chooses the multiple-repository commit mode
-- **THEN** each target SHALL receive a separate commit with the common message, repositories without selected files SHALL not be targeted, and failures SHALL not undo successful commits.
+- **WHEN** marked files belong to two repositories and the user activates Commit
+- **THEN** a confirmation dialog SHALL list both repositories with their files, and only after confirmation each SHALL receive a separate commit with the common message
+
+#### Scenario: Cancel the confirmation
+- **WHEN** the user cancels the commit confirmation dialog
+- **THEN** no commit SHALL be created, and the draft and selections SHALL be kept
+
+#### Scenario: First repository commit
+- **WHEN** an unborn repository has marked files and a valid message
+- **THEN** the system SHALL create its initial commit
 
 #### Scenario: Stale selection or failed hook
-- **WHEN** a repository changes before execution or its commit hook fails
-- **THEN** that target SHALL report failure without broadening the selection, changing unrelated index entries, deleting working-tree edits, or automatically retrying.
+- **WHEN** a repository changes after confirmation or its commit hook fails
+- **THEN** that target SHALL report failure without broadening the selection, changing unrelated index entries, deleting working-tree edits or retrying, and failures SHALL not undo successful commits in other repositories
 
 #### Scenario: Selected commit during an unfinished merge
-- **WHEN** a selected-file commit targets a repository with an unfinished merge, rebase, cherry-pick, or revert
-- **THEN** the operation SHALL require completing that operation first, while the existing normal staged commit remains available where Git supports it.
+- **WHEN** a commit targets a repository with an unfinished merge, rebase, cherry-pick or revert
+- **THEN** that target SHALL be refused with an explanation that the operation must be completed outside the Git view first
 
 ### Requirement: Commit and push
-The commit form SHALL offer Commit & Push for staged commits and for selected-file commits in one or multiple repositories. Each target SHALL first commit with the existing commit rules and then perform a normal non-forced push of its current branch within the same operation. The outcome SHALL distinguish commit failure, commit success with push success, and commit success with push failure, naming the created commit. A push failure SHALL never undo or repeat the commit. If a target has no upstream, the push step SHALL report the no-upstream state and offer Publish branch rather than choose a remote silently. A keyboard shortcut SHALL trigger Commit & Push separately from plain Commit.
+The commit form SHALL offer Commit & Push for marked-file commits in one or several repositories, confirmed through the same dialog as Commit. Each target SHALL first commit under the existing commit rules and then perform a normal non-forced push of its current branch within the same operation. The outcome SHALL distinguish commit failure, commit success with push success, and commit success with push failure, naming the created commit. A push failure SHALL never undo or repeat the commit. If a target has no upstream, the push step SHALL report the no-upstream state and offer Publish branch rather than choose a remote silently. A keyboard shortcut SHALL open Commit & Push confirmation separately from plain Commit.
 
 #### Scenario: Commit and push succeed
-- **WHEN** the user submits Commit & Push for a repository with an upstream and the remote accepts
+- **WHEN** the user confirms Commit & Push for a repository with an upstream and the remote accepts
 - **THEN** one commit SHALL be created and pushed and the outcome SHALL report both steps as successful
 
 #### Scenario: Push rejected after commit
@@ -146,7 +135,7 @@ The commit form SHALL offer Commit & Push for staged commits and for selected-fi
 - **THEN** the outcome SHALL state that the commit exists locally and the push failed with the reason, the draft SHALL be cleared as committed, and no retry SHALL occur
 
 #### Scenario: Multiple repositories
-- **WHEN** selected files in three repositories are submitted with Commit & Push and one push fails
+- **WHEN** marked files in three repositories are confirmed with Commit & Push and one push fails
 - **THEN** each repository SHALL report its own commit and push result, and the other two SHALL remain committed and pushed
 
 ### Requirement: Confirmed deletion of untracked files

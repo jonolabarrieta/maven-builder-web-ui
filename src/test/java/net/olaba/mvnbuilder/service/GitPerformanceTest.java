@@ -23,15 +23,17 @@ class GitPerformanceTest {
     @TempDir Path base;
     CountingRunner git;
     WorkspaceGitDiscoveryService discovery;
+    RegisteredProjects projects;
     GitChangeService changes;
     Workspace workspace;
     Path root;
     @BeforeEach void setup() throws Exception {
-        git = new CountingRunner(); discovery = new WorkspaceGitDiscoveryService(git); changes = new GitChangeService(git);
+        git = new CountingRunner(); projects = new RegisteredProjects(); discovery = new WorkspaceGitDiscoveryService(git, projects); changes = new GitChangeService(git);
         workspace = new Workspace(); workspace.setId(1L); workspace.setName("Fixture"); workspace.setBasePath(base.toString());
         root = Files.createDirectory(base.resolve("repository"));
         git.text(root, "init", "-b", "main"); git.text(root, "config", "user.name", "Fixture"); git.text(root, "config", "user.email", "fixture@example.invalid");
         git.text(root, "config", "core.autocrlf", "false");
+        projects.add(root);
     }
     @AfterEach void close() { git.close(); }
     String id() { return discovery.discover(workspace).repositories().getFirst().id(); }
@@ -101,13 +103,20 @@ class GitPerformanceTest {
         assertTrue(git.calls.size() <= 5, "staged diff started " + git.calls);
         assertEquals("B", stagedDiff.lines().stream().filter(line -> line.type().equals("+")).findFirst().orElseThrow().text());
     }
-    @Test void discoverySkipsExcludedBuildAndDependencyFolders() throws Exception {
+    @Test void discoveryResolvesProjectsWithoutWalkingBuildFolders() throws Exception {
         for (int i = 0; i < 1000; i++) Files.createDirectories(root.resolve("node_modules/package-" + i));
         Path hidden = Files.createDirectories(root.resolve("target/generated-repository")); git.text(hidden, "init", "-b", "main");
+        projects.add(Files.createDirectories(root.resolve("module-a"))); projects.add(Files.createDirectories(root.resolve("module-b")));
+        git.calls.clear();
         var result = discovery.discover(workspace);
-        assertEquals(List.of("repository"), result.repositories().stream().map(Repository::path).toList());
-        assertTrue(result.visited() < 10, "excluded folders were visited: " + result.visited());
-        discovery.configureExclusions("node_modules");
-        assertEquals(2, discovery.discover(workspace).repositories().size(), "configured exclusions replace the defaults");
+        assertEquals(List.of("repository"), result.repositories().stream().map(Repository::displayName).toList());
+        assertEquals(3, result.visited());
+        assertTrue(git.calls.size() <= 3 * 4, "discovery started " + git.calls);
+    }
+    @Test void membershipIsCheckedWithoutGitProcesses() throws Exception {
+        String id = id(); discovery.repository(workspace, id);
+        git.calls.clear();
+        for (int i = 0; i < 20; i++) discovery.repository(workspace, id);
+        assertEquals(0, git.calls.size());
     }
 }

@@ -1,13 +1,13 @@
 /* Workspace Git page: sidebar. Scripts share window.WorkspaceGitApp and load in template order. */
 (App => {
     'use strict';
-    const { $, base, state, announce, node, repoUrl, changed, staged, entryKey, repository, status, entries, synchronize, branchLabel } = App;
+    const { $, base, state, announce, node, repoUrl, entryKey, repository, status, entries, synchronize, repoName, branchBadge, upstreamLabel } = App;
     const { guard, request, delay } = App;
     function visible(repo) {
         const term = $('git-search').value.trim().toLowerCase();
         const current = state.statuses.get(repo.id);
         if ($('git-changed-only').checked && current && !current.files.length) return false;
-        return !term || `${repo.name} ${repo.path}`.toLowerCase().includes(term) || current?.files.some(file => file.path.toLowerCase().includes(term));
+        return !term || `${repoName(repo)} ${current?.branch || ''}`.toLowerCase().includes(term) || current?.files.some(file => file.path.toLowerCase().includes(term));
     }
     function markFile(id, file, selected) {
         let files = state.files.get(id);
@@ -15,11 +15,32 @@
         if (selected) files.set(file.path, { path: file.path, area: file.area });
         else if (files.get(file.path)?.area === file.area) files.delete(file.path);
     }
-    function selectionChanged(id) {
-        const repositories = [...state.files.values()].filter(files => files.size).length;
-        if (repositories && state.commitMode === 'staged') App.setCommitMode(repositories > 1 ? 'selected-all' : 'selected-current');
-        else if (repositories > 1 && state.commitMode === 'selected-current') App.setCommitMode('selected-all');
-        renderRepositories([id]);
+    function selectionChanged(id) { renderRepositories([id]); App.renderToolbar(); }
+    const markable = file => file.kind !== 'gitlink' && file.kind !== 'conflict';
+    /** Files a repository checkbox marks; a path listed in both areas counts once, from Changes. */
+    function eligible(id) {
+        const unique = new Map();
+        for (const file of entries(state.statuses.get(id))) if (markable(file) && !unique.has(file.path)) unique.set(file.path, file);
+        return [...unique.values()];
+    }
+    function counts(id) {
+        const files = eligible(id); const marks = state.files.get(id);
+        if (!marks?.size) return { eligible: files.length, marked: 0 };
+        const present = new Set(entries(state.statuses.get(id)).map(entryKey));
+        return { eligible: files.length, marked: [...marks.values()].filter(mark => present.has(entryKey(mark))).length };
+    }
+    function markAllFiles(id) { state.files.set(id, new Map(eligible(id).map(file => [file.path, { path: file.path, area: file.area }]))); }
+    /** Checking a repository marks all of its files and targets it for bulk actions; unchecking clears both. */
+    function setRepositoryChecked(id, checked) {
+        checked ? state.selected.add(id) : state.selected.delete(id);
+        const current = state.statuses.get(id);
+        if (!current || current.error) { checked ? state.markAll.add(id) : state.markAll.delete(id); if (!checked) state.files.delete(id); return; }
+        state.markAll.delete(id);
+        if (checked) markAllFiles(id); else state.files.delete(id);
+    }
+    /** Repositories with marked files, plus clean repositories the user checked. */
+    function bulkTargets() {
+        return state.repositories.map(repo => repo.id).filter(id => { const { eligible: files, marked } = counts(id); return marked > 0 || (files === 0 && state.selected.has(id)); });
     }
     function disclosure(label) {
         const button = node('button', 'git-disclosure'); button.type = 'button'; button.setAttribute('aria-label', label);
@@ -54,7 +75,7 @@
                 await App.chooseFile({ path: file.path, area: file.area });
             }));
             const row = node('div', 'git-file-row'); const checkbox = node('input'); checkbox.type = 'checkbox';
-            checkbox.setAttribute('aria-label', `Select ${file.path} from ${label} in ${repo.path} for commit`);
+            checkbox.setAttribute('aria-label', `Select ${file.path} from ${label} in ${repoName(repo)} for commit`);
             checkbox.addEventListener('change', () => { markFile(repo.id, file, checkbox.checked); selectionChanged(repo.id); });
             const stage = node('button', 'git-file-action', file.area === 'staged' ? '−' : '+'); stage.type = 'button';
             stage.setAttribute('aria-label', `${file.area === 'staged' ? 'Unstage' : 'Stage'} ${file.path}`); stage.title = file.area === 'staged' ? 'Unstage file' : 'Stage file';
@@ -121,15 +142,16 @@
         if (view) return view;
         const section = node('section', 'git-repository');
         const heading = node('div', 'git-repository-heading');
-        const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.setAttribute('aria-label', `Select repository ${repo.path}`);
-        checkbox.addEventListener('change', () => { checkbox.checked ? state.selected.add(repo.id) : state.selected.delete(repo.id); renderSelection(); App.renderToolbar(); });
-        const toggle = disclosure(`Expand files in ${repo.path}`);
+        const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.setAttribute('aria-label', `Select repository ${repoName(repo)} and all of its files`);
+        checkbox.addEventListener('change', () => { setRepositoryChecked(repo.id, checkbox.checked); renderRepositories([repo.id]); App.renderToolbar(); });
+        const toggle = disclosure(`Expand files in ${repoName(repo)}`);
         toggle.addEventListener('click', () => { state.expanded.has(repo.id) ? state.expanded.delete(repo.id) : state.expanded.add(repo.id); renderRepositories([repo.id]); });
-        const button = node('button'); button.type = 'button'; const name = node('span', 'git-repo-name', repo.name); const count = node('span', 'git-count'); button.append(name, count);
-        button.title = repo.path; button.addEventListener('click', () => guard(async () => { if (await App.leaveEditor()) await chooseRepository(repo.id); }));
+        const button = node('button'); button.type = 'button'; const name = node('span', 'git-repo-name', repoName(repo)); const count = node('span', 'git-count'); button.append(name, count);
+        button.title = repo.absolutePath; button.addEventListener('click', () => guard(async () => { if (await App.leaveEditor()) await chooseRepository(repo.id); }));
         heading.append(checkbox, toggle, button); const meta = node('div', 'git-repo-meta'); const files = node('div');
+        const badge = node('span', 'git-branch-badge'); const upstream = node('span', 'git-repo-upstream'); meta.append(badge, upstream);
         section.append(heading, meta, files);
-        view = { section, checkbox, toggle, button, count, meta, files, groups: new Map(), buttons: new Map() }; state.views.set(repo.id, view);
+        view = { section, checkbox, toggle, button, count, meta, badge, upstream, files, groups: new Map(), buttons: new Map() }; state.views.set(repo.id, view);
         return view;
     }
     /** Updates one repository entry in place; other entries are not touched. */
@@ -137,11 +159,17 @@
         const view = repositoryView(repo); const current = state.statuses.get(repo.id);
         view.section.hidden = !visible(repo); view.section.classList.toggle('is-active', state.repository === repo.id);
         view.button.setAttribute('aria-pressed', String(state.repository === repo.id));
-        view.checkbox.checked = state.selected.has(repo.id); view.count.textContent = current?.error ? 'Error' : current ? String(current.files.length) : '…';
-        view.meta.textContent = `${repo.path} · ${branchLabel(current)}`;
+        const { eligible: files, marked } = counts(repo.id);
+        view.checkbox.checked = files ? marked === files : state.selected.has(repo.id) || state.markAll.has(repo.id);
+        view.checkbox.indeterminate = marked > 0 && marked < files;
+        view.count.textContent = current?.error ? 'Error' : current ? String(current.files.length) : '…';
+        const badge = branchBadge(current); view.badge.textContent = badge; view.badge.hidden = !badge;
+        view.badge.classList.toggle('is-detached', current?.branch === 'detached HEAD');
+        view.badge.title = badge ? `Current branch: ${current.branch}` : '';
+        view.upstream.textContent = upstreamLabel(current);
         const open = state.expanded.has(repo.id);
         view.toggle.setAttribute('aria-expanded', String(open));
-        view.toggle.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} files in ${repo.path}`);
+        view.toggle.setAttribute('aria-label', `${open ? 'Collapse' : 'Expand'} files in ${repoName(repo)}`);
         const groups = [];
         if (open) {
             for (const label of ['Staged Changes', 'Changes', 'Conflicts']) {
@@ -152,15 +180,15 @@
                 if (!group) {
                     const section = node('div', 'git-file-group'); const heading = node('div', 'git-file-group-heading');
                     const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.disabled = label === 'Conflicts';
-                    checkbox.setAttribute('aria-label', `Select all files in ${label} for ${repo.path}`);
+                    checkbox.setAttribute('aria-label', `Select all files in ${label} for ${repoName(repo)}`);
                     checkbox.addEventListener('change', () => {
                         entries(state.statuses.get(repo.id)).filter(file => file.group === label && file.kind !== 'gitlink' && file.kind !== 'conflict').forEach(file => markFile(repo.id, file, checkbox.checked));
                         selectionChanged(repo.id);
                     });
-                    const toggle = disclosure(`Collapse ${label} in ${repo.path}`); const title = node('span'); toggle.append(title);
+                    const toggle = disclosure(`Collapse ${label} in ${repoName(repo)}`); const title = node('span'); toggle.append(title);
                     toggle.addEventListener('click', () => { state.collapsedGroups.has(groupKey) ? state.collapsedGroups.delete(groupKey) : state.collapsedGroups.add(groupKey); renderRepositories([repo.id]); });
                     const action = node('button', 'git-group-action', label === 'Staged Changes' ? 'Unstage all' : 'Stage all'); action.type = 'button';
-                    action.setAttribute('aria-label', `${action.textContent} in ${label} for ${repo.path}`); action.hidden = label === 'Conflicts';
+                    action.setAttribute('aria-label', `${action.textContent} in ${label} for ${repoName(repo)}`); action.hidden = label === 'Conflicts';
                     action.addEventListener('click', () => {
                         if (label === 'Staged Changes') return App.actionDialog('unstage-all', [repo.id]);
                         guard(() => stageFiles(repo, entries(state.statuses.get(repo.id)).filter(file => file.group === label && file.kind !== 'gitlink' && file.kind !== 'conflict')));
@@ -175,7 +203,7 @@
                 group.checkbox.disabled = !eligible.length; group.checkbox.checked = eligible.length > 0 && marked === eligible.length; group.checkbox.indeterminate = marked > 0 && marked < eligible.length;
                 const expanded = !state.collapsedGroups.has(groupKey); group.list.hidden = !expanded;
                 group.toggle.setAttribute('aria-expanded', String(expanded));
-                group.toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${label} in ${repo.path}`);
+                group.toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${label} in ${repoName(repo)}`);
                 synchronize(group.list, groupRows(repo, view, files, label)); groups.push(group.section);
             }
         }
@@ -193,7 +221,7 @@
     function renderSidebar() {
         pending.clear();
         const rows = state.repositories.map(renderRepository);
-        if (!rows.length) rows.push(node('p', 'git-empty', 'No repositories found. Check the workspace base folder or refresh repositories.'));
+        if (!rows.length) rows.push(node('p', 'git-empty', 'No repositories. The Git view lists the repositories of workspace projects, including disabled ones; add projects or refresh repositories.'));
         synchronize($('git-repositories'), rows);
         renderSummary();
     }
@@ -215,8 +243,9 @@
         const ids = [...pending]; pending.clear(); renderRepositories(ids);
     }
     function renderSelection() {
-        $('git-selected-count').textContent = `${state.selected.size} selected`;
-        const available = state.repositories.filter(visible); const selected = available.filter(repo => state.selected.has(repo.id)).length;
+        const targets = new Set(bulkTargets());
+        $('git-selected-count').textContent = `${targets.size} selected`;
+        const available = state.repositories.filter(visible); const selected = available.filter(repo => targets.has(repo.id)).length;
         $('git-select-all').checked = available.length > 0 && selected === available.length;
         $('git-select-all').indeterminate = selected > 0 && selected < available.length;
     }
@@ -229,6 +258,8 @@
             const selection = state.files.get(repo.id);
             if (selection) for (const [path, file] of selection)
                 if (!entries(response).some(entry => entry.path === path && entry.area === file.area)) selection.delete(path);
+            // A repository checked before its status arrived marks its files now.
+            if (state.markAll.delete(repo.id)) markAllFiles(repo.id);
         } catch (error) {
             if (generation !== state.generation || version !== state.statusGenerations.get(repo.id)) return;
             state.statuses.set(repo.id, { files: [], error: error.message });
@@ -263,19 +294,20 @@
     }
     async function discover(refresh = false) {
         const generation = ++state.generation;
-        $('git-refresh').disabled = true; announce('Discovering repositories under the workspace base folder…');
+        $('git-refresh').disabled = true; announce('Finding the repositories of the workspace projects…');
         try {
-            const result = await App.watch(await request(`${base}/repositories${refresh ? '?refresh=true' : ''}`));
+            const result = await App.watch(await request(`${base}/repositories${refresh ? '?refresh=true' : ''}`), refresh ? { action: 'discovery', label: 'Refresh repositories' } : null);
             if (generation !== state.generation) return;
-            if (!result.discovery) throw new Error(result.outcomes.find(outcome => outcome.state === 'failed')?.message || 'Repository scan failed. Check the base folder.');
+            if (!result.discovery) throw new Error(result.outcomes.find(outcome => outcome.state === 'failed')?.message || 'Repository discovery failed. Check the workspace project folders.');
             state.repositories = result.discovery.repositories;
             state.selected = new Set([...state.selected].filter(id => state.repositories.some(repo => repo.id === id)));
+            state.markAll = new Set([...state.markAll].filter(id => state.repositories.some(repo => repo.id === id)));
             for (const id of state.files.keys()) if (!state.repositories.some(repo => repo.id === id)) state.files.delete(id);
             if (!state.repositories.some(repo => repo.id === state.repository)) { state.repository = null; state.file = null; state.diff = null; }
-            $('git-warnings').textContent = [...result.discovery.warnings, ...(result.discovery.complete ? [] : ['Scan incomplete. Some folders could not be inspected.'])].join('\n');
+            $('git-warnings').textContent = [...result.discovery.warnings, ...(result.discovery.complete ? [] : ['Discovery incomplete. Some projects could not be inspected.'])].join('\n');
             renderSidebar(); await refreshStatuses();
             if (!state.repository && state.repositories.length) await chooseRepository(state.repositories[0].id);
-            announce(`${state.repositories.length} repositories discovered. Remote information reflects the last fetch.${result.discovery.complete ? '' : ' Scan incomplete; review warnings.'}`);
+            announce(`${state.repositories.length} repositories discovered. Remote information reflects the last fetch.${result.discovery.complete ? '' : ' Discovery incomplete; review warnings.'}`);
         } finally { if (generation === state.generation) $('git-refresh').disabled = false; }
     }
     /** {@code reconcile: false} is used when the caller selects a specific file right after switching. */
@@ -290,8 +322,8 @@
         }
         renderSidebar();
         if (!status() || status().error) { await refreshStatus(repository()); flushRender(); }
-        if (switched) { if (state.amending) App.setAmend(false); guard(() => Promise.all([App.loadAmend(), App.refreshHistory(), App.refreshStashes()])); }
+        if (switched) guard(() => Promise.all([App.refreshHistory(), App.refreshStashes()]));
         if (reconcile) await App.reconcileFile();
     }
-    Object.assign(App, { stageFiles, visible, markFile, selectionChanged, disclosure, renderSidebar, renderRepositories, flushRender, refreshOnReturn, renderSelection, refreshStatus, refreshStatuses, discover, chooseRepository });
+    Object.assign(App, { stageFiles, visible, markFile, selectionChanged, setRepositoryChecked, bulkTargets, counts, disclosure, renderSidebar, renderRepositories, flushRender, refreshOnReturn, renderSelection, refreshStatus, refreshStatuses, discover, chooseRepository });
 })(window.WorkspaceGitApp = window.WorkspaceGitApp || {});

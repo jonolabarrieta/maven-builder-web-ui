@@ -5,8 +5,10 @@ import java.util.List;
 
 public final class GitModels {
     private GitModels() { }
-    public record Repository(String id, String name, String path) { }
+    /** {@code name} is the working-tree folder name; {@code displayName} adds parent folders only to tell equal names apart. */
+    public record Repository(String id, String name, String displayName, String absolutePath) { }
     public record Resolved(Repository descriptor, Path root, Path gitDir, Path commonDir) { }
+    /** {@code visited} counts the registered projects that were resolved. */
     public record Discovery(List<Repository> repositories, List<String> warnings, boolean complete, long visited) { }
     public record FileChange(String path, String oldPath, String index, String working, String kind) { }
     public record Status(String branch, String upstream, Integer ahead, Integer behind, boolean unborn,
@@ -15,16 +17,10 @@ public final class GitModels {
     public record Diff(String path, String oldPath, String area, String version, String kind, String reason,
                        boolean partial, List<Line> lines) { }
     public record Selection(String path, String area, String version, List<String> lines, boolean all) { }
-    /** {@code push} pushes the new commit's branch within the same operation (Commit & Push). */
-    /** {@code amend} replaces the last commit, which must still be {@code head}, the commit the user reviewed. */
-    public record Commit(String message, String version, boolean push, boolean amend, String head) {
-        public Commit(String message, String version) { this(message, version, false, false, null); }
-        public Commit(String message, String version, boolean push) { this(message, version, push, false, null); }
-    }
-    /** Whether the last commit can be amended, its full message for prefilling, and otherwise why not. */
-    public record AmendState(String head, String message, boolean allowed, String reason) { }
+    /** {@code area} is "changes" (working-tree content) or "staged" (index content). */
     public record CommitFile(String path, String area) { }
     public record CommitTarget(String id, String version, List<CommitFile> files) { }
+    /** Commits only the marked files of each target; {@code push} pushes each new commit within the same operation (Commit & Push). */
     public record SelectedCommit(String message, List<CommitTarget> targets, boolean push) {
         public SelectedCommit(String message, List<CommitTarget> targets) { this(message, targets, false); }
     }
@@ -40,8 +36,8 @@ public final class GitModels {
     public record Outcome(String repositoryId, String state, String message) { }
     /** ahead/behind are null without an upstream; {@code gone} marks an upstream that no longer exists after a fetch. */
     public record SyncBranch(String name, boolean current, String upstream, Integer ahead, Integer behind, boolean gone) { }
-    /** {@code lastFetch} is epoch milliseconds of the last recorded fetch, or null when none is known. */
-    public record SyncRepository(String id, String path, String branch, int changes, Long lastFetch, List<SyncBranch> branches, String error) { }
+    /** {@code lastFetch} is epoch milliseconds of the last recorded fetch, or null when none is known; the current branch is listed first. */
+    public record SyncRepository(String id, String name, String displayName, String absolutePath, String branch, int changes, Long lastFetch, List<SyncBranch> branches, String error) { }
     public record SyncSummary(List<SyncRepository> repositories) { }
     /** {@code pushed} is true when the commit is contained in the branch's upstream; false when not, or when there is no upstream. */
     public record HistoryCommit(String sha, String shortSha, String subject, String author, long time, boolean pushed) { }

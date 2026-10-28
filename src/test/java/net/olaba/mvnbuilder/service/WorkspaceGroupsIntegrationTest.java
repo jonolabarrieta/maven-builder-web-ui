@@ -34,6 +34,9 @@ class WorkspaceGroupsIntegrationTest {
     @Autowired BuildRunRepository history;
     @Autowired JavaInstallationRepository installations;
     @Autowired MockMvc mvc;
+    @Autowired WorkspaceGitProjectSource gitProjects;
+    @Autowired net.olaba.mvnbuilder.service.git.WorkspaceGitDiscoveryService gitDiscovery;
+    @Autowired net.olaba.mvnbuilder.service.git.GitCommandRunner git;
     @MockBean ProcessExecutionService processes;
     @MockBean SimpMessagingTemplate messages;
     @TempDir Path base;
@@ -51,6 +54,29 @@ class WorkspaceGroupsIntegrationTest {
             .thenReturn(CompletableFuture.completedFuture(new CommandResult(0, List.of(), 1)));
         when(processes.executeCommand(anyString(), any(), any(String[].class)))
             .thenReturn(CompletableFuture.completedFuture(new CommandResult(0, List.of(), 1)));
+    }
+    @Test void gitViewListsRepositoriesOfOwnDisabledAndImportedProjectsOnly() throws Exception {
+        Workspace p=parent("Shared"), a=workspace("A");
+        MavenProject enabled=add(a,"enabled",false), disabled=add(a,"disabled",false), folder=add(a,"folder",true), imported=add(p,"imported",false);
+        disabled.setEnabled(false); projects.save(disabled);
+        groups.create(a.getId(),"Libraries",p.getId());
+        for (MavenProject project : List.of(enabled, disabled, folder, imported)) git.text(Path.of(project.getAbsolutePath()), "init", "-b", "main");
+        Path unregistered=Files.createDirectories(base.resolve(a.getId() + "/unregistered")); git.text(unregistered, "init", "-b", "main");
+        var listed=gitProjects.folders(a).stream().map(f -> f.folder().getFileName().toString()).sorted().toList();
+        assertEquals(List.of("disabled","enabled","folder","imported"), listed);
+        Workspace owner=workspaceRepository.findById(a.getId()).orElseThrow(); owner.setBasePath(base.resolve(a.getId().toString()).toString());
+        var found=gitDiscovery.discover(owner);
+        assertEquals(List.of("disabled","enabled","folder","imported"), found.repositories().stream().map(r -> r.displayName()).toList(), found.warnings().toString());
+        workspaces.deleteProject(disabled.getId());
+        assertTrue(gitDiscovery.last(owner).isEmpty(), "removing a project invalidates the last discovery");
+        assertEquals(List.of("enabled","folder","imported"), gitDiscovery.discover(owner).repositories().stream().map(r -> r.displayName()).toList());
+    }
+    @Test void gitProjectFoldersFallBackToTheBaseFolderWhenNoAbsolutePathIsStored() {
+        Workspace owner=new Workspace(); owner.setBasePath(base.toString());
+        MavenProject legacy=MavenProject.builder().withId(7L).withWorkspace(owner).withProjectKind(ProjectKind.MAVEN).withArtifactId("legacy").withRelativePath("libs/legacy").build();
+        assertEquals(base.resolve("libs/legacy").toAbsolutePath().normalize(), WorkspaceGitProjectSource.folder(legacy).folder());
+        MavenProject orphan=MavenProject.builder().withId(8L).withProjectKind(ProjectKind.MAVEN).withArtifactId("orphan").build();
+        assertNull(WorkspaceGitProjectSource.folder(orphan).folder());
     }
     @Test void sharedReferencesPropagateAndEnabledOverridesStayLocal() throws Exception {
         Workspace p=parent("Shared"), a=workspace("A"), b=workspace("B");

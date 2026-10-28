@@ -4,8 +4,7 @@
     const { $, state, changed } = App;
     const { guard } = App;
     $('git-refresh').addEventListener('click', () => guard(() => App.discover(true)));
-    $('git-push-selected').addEventListener('click', () => App.actionDialog('push', [...state.selected]));
-    $('git-commit-mode').addEventListener('change', () => App.setCommitMode($('git-commit-mode').value));
+    $('git-push-selected').addEventListener('click', () => App.actionDialog('push', App.bulkTargets()));
     let searchTimer;
     $('git-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(App.renderSidebar, 150); });
     // The uncommitted-changes filter is remembered between visits.
@@ -15,9 +14,9 @@
         try { localStorage.setItem(CHANGED_ONLY, String($('git-changed-only').checked)); } catch (_) { /* Storage unavailable. */ }
         App.renderSidebar();
     });
-    $('git-select-all').addEventListener('change', event => { state.repositories.filter(App.visible).forEach(repo => event.target.checked ? state.selected.add(repo.id) : state.selected.delete(repo.id)); App.renderSidebar(); });
+    $('git-select-all').addEventListener('change', event => { state.repositories.filter(App.visible).forEach(repo => App.setRepositoryChecked(repo.id, event.target.checked)); App.renderSidebar(); });
     document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => App.actionDialog(button.dataset.action, state.repository ? [state.repository] : [])));
-    document.querySelectorAll('[data-bulk-action]').forEach(button => button.addEventListener('click', () => App.actionDialog(button.dataset.bulkAction, [...state.selected])));
+    document.querySelectorAll('[data-bulk-action]').forEach(button => button.addEventListener('click', () => App.actionDialog(button.dataset.bulkAction, App.bulkTargets())));
     $('git-stage-file').addEventListener('click', () => guard(() => App.mutate(false))); $('git-stage-lines').addEventListener('click', () => guard(() => App.mutate(true)));
     $('git-discard-file').addEventListener('click', () => App.actionDialog('discard', [state.repository], state.diff?.path));
     $('git-diff-mode').addEventListener('change', () => guard(App.renderDiff));
@@ -59,9 +58,12 @@
     if (matchMedia('(max-width:700px)').matches) $('git-diff-mode').value = 'unified';
     // Stable test and debugging surface; functions resolve through the shared namespace.
     window.WorkspaceGit = { state, discover: App.discover, refreshStatuses: App.refreshStatuses, chooseRepository: App.chooseRepository, chooseFile: App.chooseFile, mutate: App.mutate,
-        actionDialog: App.actionDialog, renderDiff: App.renderDiff, setCommitMode: App.setCommitMode, commitTargets: App.commitTargets };
-    $('git-amend').addEventListener('change', event => App.setAmend(event.target.checked));
+        actionDialog: App.actionDialog, renderDiff: App.renderDiff, commitTargets: App.commitTargets, bulkTargets: App.bulkTargets, setRepositoryChecked: App.setRepositoryChecked };
     $('git-branch-button').addEventListener('click', () => guard(App.switchBranch));
     $('git-open-editor').addEventListener('click', () => guard(App.openInVsCode));
-    App.initLayout(); App.initSync(); App.initHistory(); App.initStashes(); App.initShortcuts(); App.initEditor(); App.connect(); guard(() => App.discover());
+    $('git-open-folder').addEventListener('click', () => guard(App.openFolder));
+    $('git-copy-path').addEventListener('click', () => guard(App.copyPath));
+    $('git-download-changed').addEventListener('click', App.downloadChanged);
+    $('git-operation-download-all').addEventListener('click', App.downloadOperationHistory);
+    App.initLayout(); App.initSync(); App.initHistory(); App.initLog(); App.renderOperations(); App.initStashes(); App.initShortcuts(); App.initEditor(); App.connect(); guard(() => App.discover());
 })(window.WorkspaceGitApp);

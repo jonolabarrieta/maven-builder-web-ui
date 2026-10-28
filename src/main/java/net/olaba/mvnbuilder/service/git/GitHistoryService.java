@@ -35,18 +35,6 @@ public class GitHistoryService {
         boolean more = commits.size() > size;
         return new HistoryPage(List.copyOf(more ? commits.subList(0, size) : commits), more, tracked);
     }
-    /** Amending is limited to an unpushed last commit outside merges, rebases, cherry-picks and reverts. */
-    public AmendState amendState(Resolved repository) {
-        String head = changes.head(repository);
-        if (head.equals("unborn")) return new AmendState(null, "", false, "There is no commit to amend yet.");
-        String message = git.run(repository.root(), "log", "-1", "--format=%B", head).require().text().stripTrailing();
-        for (String marker : List.of("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"))
-            if (java.nio.file.Files.exists(repository.gitDir().resolve(marker))) return new AmendState(head, message, false, "Finish the current merge, rebase, cherry-pick or revert first.");
-        var upstream = git.run(repository.root(), "rev-parse", "--verify", "--quiet", "@{upstream}");
-        if (upstream.code() == 0 && git.run(repository.root(), "merge-base", "--is-ancestor", head, upstream.text().strip()).code() == 0)
-            return new AmendState(head, message, false, "The last commit is already pushed; amending it would require a force push.");
-        return new AmendState(head, message, true, null);
-    }
     public List<CommitFileChange> files(Resolved repository, String sha) {
         String output = git.run(repository.root(), "diff-tree", "--no-commit-id", "--name-status", "-r", "-z", "-M", "--root", commit(sha)).require().text();
         List<CommitFileChange> files = new ArrayList<>();

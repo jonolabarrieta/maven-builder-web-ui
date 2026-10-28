@@ -42,7 +42,7 @@ SCENARIOS = r'''
       });
       gitScenarios.push(async (checks, W, $, flush) => {
         const original=discovery.discovery.repositories;
-        const many=Array.from({length:100},(_,i)=>({id:'m'+i,name:'repo'+i,path:'many/repo'+i}));
+        const many=Array.from({length:100},(_,i)=>({id:'m'+i,name:'repo'+i,displayName:'repo'+i,absolutePath:'/work/many/repo'+i}));
         many.forEach(repo=>statuses.set(repo.id,{branch:'main',upstream:null,version:'v-'+repo.id,stagedVersion:'s',files:[]}));
         discovery.discovery.repositories=many; holdStatuses=true; held.length=0;
         const discovering=W.discover(true);
@@ -189,21 +189,25 @@ SCENARIOS = r'''
         await W.chooseFile({path:'file.txt',area:'changes'}); await flush();
       });
       gitScenarios.push(async (checks, W, $, flush) => {
-        holdCommit=false; await W.chooseRepository('r1'); const r1=statuses.get('r1'); const files=r1.files;
-        r1.files=[{path:'file.txt',index:'M',working:'.',kind:'text'}]; await W.refreshStatuses(); W.state.files.clear(); W.setCommitMode('staged');
+        await W.chooseRepository('r1'); const r1=statuses.get('r1'); const files=r1.files;
+        r1.files=[{path:'file.txt',index:'M',working:'.',kind:'text'}]; await W.refreshStatuses(); W.state.files.clear();
+        const mark=()=>W.setRepositoryChecked('r1',true);
         const message=$('git-commit-message'); const lastCall=suffix=>calls.filter(call=>call.url.endsWith(suffix)).at(-1);
-        message.value='Ship it'; message.dispatchEvent(new Event('input'));
-        $('git-commit-push-button').click(); await flush(); await flush();
-        checks.commitAndPushPayload=lastCall('/commit').data.push===true && lastCall('/commit').data.message==='Ship it' && message.value==='';
-        message.value='Keyboard commit'; message.dispatchEvent(new Event('input'));
-        message.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true})); await flush(); await flush();
-        const plain=lastCall('/commit');
-        message.value='Keyboard push'; message.dispatchEvent(new Event('input'));
-        message.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,shiftKey:true,bubbles:true})); await flush(); await flush();
-        checks.commitShortcuts=plain.data.message==='Keyboard commit' && plain.data.push===false && lastCall('/commit').data.message==='Keyboard push' && lastCall('/commit').data.push===true;
+        mark(); message.value='Ship it'; message.dispatchEvent(new Event('input'));
+        $('git-commit-push-button').click(); for (let i=0;i<20 && !$('git-commit-dialog').open;i++) await flush();
+        checks.commitAndPushConfirmationSaysPush=$('git-commit-dialog-confirm').textContent==='Commit & Push' && $('git-commit-dialog-summary').textContent.includes('pushed');
+        await answerCommit(true);
+        checks.commitAndPushPayload=lastCall('/commits').data.push===true && lastCall('/commits').data.message==='Ship it' && message.value==='';
+        mark(); message.value='Keyboard commit'; message.dispatchEvent(new Event('input'));
+        message.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true}));
+        const plainConfirmed=await answerCommit(true); const plain=lastCall('/commits');
+        mark(); message.value='Keyboard push'; message.dispatchEvent(new Event('input'));
+        message.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,shiftKey:true,bubbles:true}));
+        const pushConfirmed=await answerCommit(true);
+        checks.commitShortcutsConfirmFirst=plainConfirmed && pushConfirmed && plain.data.message==='Keyboard commit' && plain.data.push===false && lastCall('/commits').data.message==='Keyboard push' && lastCall('/commits').data.push===true;
         r1.files=[{path:'file.txt',index:'.',working:'M',kind:'text'}]; await W.refreshStatuses();
         W.state.views.get('r1').buttons.get('changes\0file.txt').checkbox.click(); batchUnpushed=true;
-        message.value='Unpushed'; message.dispatchEvent(new Event('input')); $('git-commit-push-button').click(); await flush(); await flush(); batchUnpushed=false;
+        message.value='Unpushed'; message.dispatchEvent(new Event('input')); $('git-commit-push-button').click(); await answerCommit(true); batchUnpushed=false;
         checks.committedButUnpushedClearsDraft=message.value==='' && !W.state.files.get('r1')?.size && $('git-announcement').textContent.includes('could not be pushed');
         await W.chooseRepository('r2'); await flush();
         checks.publishOfferedWithoutUpstream=!$('git-publish').hidden;
@@ -223,26 +227,42 @@ SCENARIOS = r'''
         checks.deleteNeedsConfirmation=$('confirmation-modal-title').textContent==='Delete untracked file?' && lastCall('/actions').data.action==='pull-rebase';
         $('confirmation-modal-primary').click(); await flush(); await flush();
         checks.deletePayload=lastCall('/actions').data.action==='delete-untracked' && lastCall('/actions').data.path==='tmp.log' && lastCall('/actions').data.confirmation==='confirmed';
-        r1.files=files; await W.refreshStatuses(); await W.chooseFile({path:'file.txt',area:'changes'}); holdCommit=true;
+        r1.files=files; await W.refreshStatuses(); await W.chooseFile({path:'file.txt',area:'changes'});
         checks.deleteHiddenForTracked=$('git-delete-file').hidden;
       });
       gitScenarios.push(async (checks, W, $, flush) => {
         const syncCalls=()=>calls.filter(call=>call.url.endsWith('/git/sync')).length; const before=syncCalls();
         $('git-sync-open').click(); for (let i=0;i<4;i++) await flush();
+        const headers=()=>[...$('git-sync-rows').querySelectorAll('tr.git-sync-repository-row')];
+        const header=repo=>headers().find(item=>item.dataset.repository===repo);
         const rows=()=>[...$('git-sync-rows').querySelectorAll('tr[data-branch]')];
         const row=(repo,branch)=>rows().find(item=>item.dataset.repository===repo && item.dataset.branch===branch);
         const cells=item=>[...item.children].map(cell=>cell.textContent);
-        checks.syncOverviewOpens=$('git-sync-dialog').open && syncCalls()===before+1 && rows().length===5;
-        checks.syncCountsPushAndPull=cells(row('r1','main'))[3]==='2' && cells(row('r2','feature'))[4]==='3' && cells(row('r1','main'))[5]==='2';
-        checks.syncShowsNonCurrentAndNoUpstream=cells(row('r1','feature'))[3]==='1' && cells(row('r2','local'))[2]==='No upstream' && cells(row('r2','local'))[3]==='—';
-        checks.syncMarksDivergence=row('r1','hotfix').querySelector('.is-diverged')!==null && !row('r1','main').querySelector('.is-diverged');
-        checks.syncFlagsStaleFetch=row('r2','feature').querySelector('.git-sync-fetch.is-stale')!==null && !row('r1','main').querySelector('.is-stale');
-        $('git-sync-filter').value='ahead'; $('git-sync-filter').dispatchEvent(new Event('change'));
-        checks.syncFilterAhead=rows().length===3 && rows().every(item=>item.dataset.repository==='r1');
-        $('git-sync-filter').value='no-upstream'; $('git-sync-filter').dispatchEvent(new Event('change'));
-        checks.syncFilterNoUpstream=rows().length===1 && rows()[0].dataset.branch==='local';
-        $('git-sync-filter').value='all'; $('git-sync-filter').dispatchEvent(new Event('change'));
+        const filter=async(id,value)=>{ $(id).value=value; $(id).dispatchEvent(new Event(id==='git-sync-filter'?'change':'input')); await new Promise(resolve=>setTimeout(resolve,200)); };
+        checks.syncOverviewOpens=$('git-sync-dialog').open && syncCalls()===before+1 && headers().length===2 && !rows().length;
+        checks.syncHeaderShowsCurrentBranch=header('r1').querySelector('.git-branch-badge').textContent==='main' && header('r2').querySelector('.git-branch-badge').textContent==='feature';
+        checks.syncShowsNamesWithoutPaths=!$('git-sync-rows').textContent.includes('/work/') && header('r1').querySelector('strong').textContent==='api' && header('r1').querySelector('strong').title==='/work/api';
+        checks.syncCountsPushAndPull=cells(header('r1'))[2]==='2' && cells(header('r1'))[1]==='origin/main' && cells(header('r2'))[3]==='3' && cells(header('r1'))[4]==='2';
+        header('r1').querySelector('.git-sync-toggle').click(); header('r2').querySelector('.git-sync-toggle').click();
+        checks.syncExpandsOtherBranches=rows().length===3 && !row('r1','main') && header('r1').querySelector('.git-sync-toggle').getAttribute('aria-expanded')==='true';
+        checks.syncShowsNonCurrentAndNoUpstream=cells(row('r1','feature'))[2]==='1' && cells(row('r2','local'))[1]==='No upstream' && cells(row('r2','local'))[2]==='—';
+        checks.syncMarksDivergence=row('r1','hotfix').querySelector('.is-diverged')!==null && !header('r1').querySelector('.is-diverged');
+        checks.syncFlagsStaleFetch=header('r2').querySelector('.git-sync-fetch.is-stale')!==null && !header('r1').querySelector('.is-stale');
+        header('r1').querySelector('.git-sync-toggle').click(); header('r2').querySelector('.git-sync-toggle').click();
+        await filter('git-sync-filter','ahead');
+        checks.syncFilterAhead=headers().length===1 && header('r1') && rows().length===2 && rows().every(item=>item.dataset.repository==='r1');
+        await filter('git-sync-filter','no-upstream');
+        checks.syncFilterNoUpstream=headers().length===1 && header('r2') && rows().length===1 && rows()[0].dataset.branch==='local';
+        await filter('git-sync-filter','all'); await filter('git-sync-repository-filter','WE');
+        checks.syncFilterByRepository=headers().length===1 && header('r2') && $('git-sync-push').textContent==='Push ahead (0)' && $('git-sync-pull').textContent==='Pull behind (1)' && $('git-sync-fetch').textContent==='Fetch all (1)';
+        await filter('git-sync-repository-filter',''); await filter('git-sync-branch-filter','hot');
+        checks.syncFilterByBranch=headers().length===1 && header('r1') && rows().length===1 && rows()[0].dataset.branch==='hotfix';
+        await filter('git-sync-branch-filter','');
         checks.syncBulkCounts=$('git-sync-push').textContent==='Push ahead (1)' && $('git-sync-pull').textContent==='Pull behind (1)';
+        checks.syncDialogResizable=getComputedStyle($('git-sync-dialog')).resize==='both' && $('git-sync-dialog').getBoundingClientRect().width>1000;
+        $('git-sync-dialog').style.width='900px'; $('git-sync-dialog').style.height='500px'; $('git-sync-dialog').dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));
+        const size=JSON.parse(localStorage.getItem('mvnbuilder.git.syncSize')||'null');
+        checks.syncDialogSizeRemembered=size?.width===900 && size?.height===500 || localStorage.getItem('mvnbuilder.git.syncSize');
         $('git-sync-push').click(); for (let i=0;i<6;i++) await flush();
         const push=calls.filter(call=>call.url.endsWith('/actions')).at(-1);
         checks.syncPushTargetsOnlyAhead=push.data.action==='push' && push.data.targets.map(t=>t.id).join()==='r1' && syncCalls()===before+2;
@@ -268,21 +288,19 @@ SCENARIOS = r'''
           && $('git-stage-file').disabled && $('git-discard-file').disabled && $('git-comparison-label').textContent.includes('c000') && !$('git-diff').querySelector('[data-gap]');
         await W.refreshStatuses(); checks.historyComparisonSurvivesRefresh=W.state.diff?.area==='commit';
         $('git-history-toggle').click(); await W.chooseFile({path:'file.txt',area:'changes'}); await flush();
-        W.setCommitMode('staged'); await W.refreshStatuses(); const r1=statuses.get('r1'); const files0=r1.files; r1.files=[]; await W.refreshStatuses();
-        $('git-commit-message').value='draft before amend'; $('git-commit-message').dispatchEvent(new Event('input'));
-        checks.amendAvailableWithoutStagedChanges=!$('git-amend').disabled && !$('git-amend-row').hidden;
-        $('git-amend').click(); await flush();
-        checks.amendPrefillsMessage=$('git-commit-message').value==='Previous message\n\nBody' && $('git-commit-button').textContent==='Amend last commit' && !$('git-commit-button').disabled;
-        $('git-amend').click(); checks.amendRestoresDraft=$('git-commit-message').value==='draft before amend';
-        $('git-amend').click(); $('git-commit-message').value='Better message'; $('git-commit-message').dispatchEvent(new Event('input'));
-        holdCommit=false; $('git-commit-button').click(); for (let i=0;i<4;i++) await flush();
-        const amendCall=calls.filter(call=>call.url.endsWith('/commit')).at(-1);
-        checks.amendPayload=amendCall.data.amend===true && amendCall.data.head==='abc1234567' && amendCall.data.message==='Better message' && !$('git-amend').checked;
-        amendState={head:'def',message:'Pushed',allowed:false,reason:'The last commit is already pushed; amending it would require a force push.'};
-        await W.chooseRepository('r2'); await W.chooseRepository('r1'); for (let i=0;i<4;i++) await flush();
-        checks.amendDisabledWithReason=$('git-amend').disabled && $('git-amend-row').title.includes('already pushed');
-        checks.historyAndAmendRaiseNoErrors=errorDialogs.length===errorsBefore || errorDialogs.slice(errorsBefore).join(' | ');
-        r1.files=files0; await W.refreshStatuses(); holdCommit=true;
+        $('git-log-open').click(); for (let i=0;i<6;i++) await flush();
+        const logCommits=()=>[...$('git-log-list').querySelectorAll('.git-history-commit > button')];
+        checks.logOpensInWindow=$('git-log-dialog').open && $('git-log-title').textContent.includes('api') && logCommits().length===2 && logCommits()[0].querySelector('.git-history-badge')!==null;
+        $('git-log-more').click(); for (let i=0;i<4;i++) await flush();
+        checks.logLoadsMore=logCommits().length===3 && $('git-log-more').hidden;
+        logCommits()[0].click(); for (let i=0;i<4;i++) await flush();
+        const logFiles=[...$('git-log-list').querySelectorAll('.git-history-files button')];
+        logFiles[0].click(); for (let i=0;i<4;i++) await flush();
+        checks.logShowsReadOnlyComparison=$('git-log-diff').querySelectorAll('.git-log-line').length===2 && $('git-log-diff').querySelector('.is-added') && $('git-log-diff').querySelector('.is-deleted')
+          && !$('git-log-diff').querySelector('input') && $('git-log-file').textContent.includes('src/Old.java') && logFiles[0].getAttribute('aria-pressed')!==null;
+        checks.logLeavesMainComparison=W.state.diff?.area==='changes';
+        $('git-log-close').click(); checks.logCloses=!$('git-log-dialog').open;
+        checks.historyRaisesNoErrors=errorDialogs.length===errorsBefore || errorDialogs.slice(errorsBefore).join(' | ');
       });
       gitScenarios.push(async (checks, W, $, flush) => {
         await W.chooseRepository('r1'); $('git-stash-toggle').click(); for (let i=0;i<4;i++) await flush();
@@ -320,6 +338,14 @@ SCENARIOS = r'''
           || JSON.stringify({branches:posted('/branches').map(c=>c.data),checkouts:posted('/checkout').length,ann:$('git-announcement').textContent,busy:[...W.state.busy],dialog:$('git-choice-dialog').open});
         $('git-open-editor').click(); await until(()=>posted('/open-editor').length>0);
         checks.openEditorRequest=posted('/open-editor').length===1 && $('git-announcement').textContent.includes('Visual Studio Code');
+        $('git-open-folder').click(); await until(()=>posted('/open-explorer').length>0);
+        checks.openFolderRequest=posted('/open-explorer').length===1 && $('git-announcement').textContent.includes('file explorer');
+        $('git-copy-path').click(); await until(()=>clipboardText!==null);
+        checks.copyPathCopiesAbsolutePath=clipboardText==='/work/api' && $('git-announcement').textContent.includes('/work/api');
+        clipboardFails=true; $('git-copy-path').click(); await until(()=>$('git-choice-dialog').open); clipboardFails=false;
+        checks.copyPathFallbackShowsPath=$('git-choice-dialog').open && $('git-choice-text').value==='/work/api';
+        $('git-choice-confirm').click(); await flush();
+        checks.headerShowsNameNotPath=$('git-repository-name').textContent==='api' && $('git-repository-name').title==='/work/api';
       });
       gitScenarios.push(async (checks, W, $, flush) => {
         const r1=statuses.get('r1'); const files0=r1.files;
@@ -401,7 +427,43 @@ SCENARIOS = r'''
         const immediate=!W.state.views.get('r1').section.hidden;
         await new Promise(resolve=>setTimeout(resolve,200));
         checks.searchIsDebounced=immediate && W.state.views.get('r1').section.hidden && !W.state.views.get('r2').section.hidden;
+        $('git-search').value='feature'; $('git-search').dispatchEvent(new Event('input')); await new Promise(resolve=>setTimeout(resolve,200));
+        checks.searchMatchesBranch=W.state.views.get('r1').section.hidden && !W.state.views.get('r2').section.hidden;
         $('git-search').value=''; $('git-search').dispatchEvent(new Event('input')); await new Promise(resolve=>setTimeout(resolve,200));
+      });
+      gitScenarios.push(async (checks, W, $, flush) => {
+        const r1=statuses.get('r1'); const r2=statuses.get('r2'); const files1=r1.files, files2=r2.files;
+        checks.listShowsNamesAndBranchBadges=!$('git-repositories').textContent.includes('/work/') && W.state.views.get('r1').button.title==='/work/api'
+          && W.state.views.get('r1').badge.textContent===r1.branch && W.state.views.get('r2').badge.textContent==='feature';
+        r1.files=[{path:'a.txt',index:'.',working:'M',kind:'text'},{path:'b.txt',index:'.',working:'M',kind:'text'}]; r2.files=[];
+        await W.refreshStatuses(); await W.chooseRepository('r1'); W.state.expanded.add('r1'); W.state.collapsedGroups.clear(); W.state.files.clear(); W.state.selected.clear(); await W.refreshStatuses();
+        const view=W.state.views.get('r1'); const choice=path=>view.buttons.get('changes\0'+path).checkbox;
+        view.checkbox.click();
+        checks.repositoryCheckMarksEveryFile=W.state.files.get('r1').size===2 && choice('a.txt').checked && choice('b.txt').checked && view.checkbox.checked && !view.checkbox.indeterminate;
+        choice('a.txt').click();
+        checks.repositoryCheckboxMixed=view.checkbox.indeterminate && W.state.files.get('r1').size===1 && $('git-selected-files-count').textContent==='1 file in 1 repository marked';
+        view.checkbox.click();
+        checks.mixedCheckboxMarksAll=W.state.files.get('r1').size===2 && view.checkbox.checked && !view.checkbox.indeterminate;
+        view.checkbox.click();
+        checks.repositoryUncheckClearsFiles=!W.state.files.get('r1')?.size && !view.checkbox.checked && !W.bulkTargets().length;
+        W.state.views.get('r2').checkbox.click();
+        checks.cleanRepositorySelectableForBulk=W.bulkTargets().join()==='r2' && W.state.views.get('r2').checkbox.checked;
+        W.state.views.get('r2').checkbox.click();
+        downloads.length=0; $('git-download-changed').click(); await flush();
+        checks.downloadChangedPaths=!$('git-download-changed').disabled && downloads.length===1 && /^Fixture-changed-repositories-\d{8}-\d{4}\.txt$/.test(downloads[0].name) && (await downloads[0].blob.text())==='/work/api\n';
+        r1.files=[]; await W.refreshStatuses();
+        checks.downloadChangedDisabledWhenClean=$('git-download-changed').disabled;
+        W.actionDialog('pull',['r1']); for (let i=0;i<4;i++) await flush();
+        W.actionDialog('fetch',['r1','r2']); for (let i=0;i<4;i++) await flush();
+        const entries=()=>[...$('git-operation-results').querySelectorAll('.git-operation-entry')];
+        checks.operationHistoryNewestFirst=entries().length>=2 && entries()[0].querySelector('strong').textContent==='Fetch' && entries()[1].querySelector('strong').textContent==='Pull'
+          && entries()[0].textContent.includes('api') && entries()[0].textContent.includes('web') && entries()[0].dataset.state==='success' && $('git-operation-heading').textContent.startsWith('Operation history');
+        downloads.length=0; entries()[0].querySelector('.git-operation-download').click(); await flush();
+        checks.operationEntryDownload=downloads.length===1 && downloads[0].name.startsWith('Fixture-fetch-repositories-') && (await downloads[0].blob.text())==='/work/api\n/work/web\n';
+        $('git-operation-download-all').click(); await flush();
+        const all=downloads.length===2 ? await downloads[1].blob.text() : '';
+        checks.operationHistoryDownloadAll=downloads[1]?.name.startsWith('Fixture-operation-history-') && all.includes('# Fetch') && all.includes('# Pull') && all.lastIndexOf('# Pull')<all.lastIndexOf('# Fetch') && all.includes('/work/web');
+        r1.files=files1; r2.files=files2; await W.refreshStatuses(); W.state.files.clear(); W.state.selected.clear(); await W.chooseFile({path:'file.txt',area:'changes'});
       });
 '''
 
@@ -447,17 +509,23 @@ def build_harness():
       window.Stomp = {over:()=>({debug:null, connect(headers,onOpen){ stomp.connected=true; setTimeout(onOpen,0); }, subscribe(topic,callback){ stomp.handlers[topic]=callback; }})};
       const publish = operation => stomp.handlers['/topic/workspace-git/1']({body:JSON.stringify(operation)});
       const B=(name,current,upstream,ahead,behind)=>({name,current,upstream,ahead,behind,gone:false});
+      // The current branch of r1 is deliberately not first: the header row must still show it.
       const syncSummary={repositories:[
-        {id:'r1',path:'api',branch:'main',changes:2,lastFetch:Date.now()-3600000,error:null,branches:[B('main',true,'origin/main',2,0),B('feature',false,'origin/feature',1,0),B('hotfix',false,'origin/hotfix',1,1)]},
-        {id:'r2',path:'web',branch:'feature',changes:0,lastFetch:null,error:null,branches:[B('feature',true,'origin/feature',0,3),B('local',false,null,null,null)]}]};
-      let amendState={head:'abc1234567',message:'Previous message\n\nBody',allowed:true,reason:null};
+        {id:'r1',name:'api',displayName:'api',absolutePath:'/work/api',branch:'main',changes:2,lastFetch:Date.now()-3600000,error:null,branches:[B('feature',false,'origin/feature',1,0),B('hotfix',false,'origin/hotfix',1,1),B('main',true,'origin/main',2,0)]},
+        {id:'r2',name:'web',displayName:'web',absolutePath:'/work/web',branch:'feature',changes:0,lastFetch:null,error:null,branches:[B('feature',true,'origin/feature',0,3),B('local',false,null,null,null)]}]};
+      // Downloads are captured instead of saved.
+      const downloads=[]; const realClick=HTMLAnchorElement.prototype.click; const blobs=new Map(); let blobId=0;
+      URL.createObjectURL=blob=>{ const url='blob:test-'+(++blobId); blobs.set(url,blob); return url; }; URL.revokeObjectURL=()=>{};
+      HTMLAnchorElement.prototype.click=function(){ if (this.download) { downloads.push({name:this.download,blob:blobs.get(this.href)}); return; } return realClick.call(this); };
+      let clipboardText=null; let clipboardFails=false;
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{ if (clipboardFails) throw new Error('denied'); clipboardText=text; }}});
       const commitAt=(i,pushed)=>({sha:'c'+i+'0000000',shortSha:'c'+i+'00',subject:'Commit '+i,author:'Fixture',time:Math.floor(Date.now()/1000)-3600*(i+1),pushed});
       let stashes=[{ref:'stash@{0}',sha:'5ta5h0000000',message:'Try layout',branch:'main',time:Math.floor(Date.now()/1000)-7200},{ref:'stash@{1}',sha:'5ta5h1111111',message:'Old idea',branch:null,time:Math.floor(Date.now()/1000)-86400*3}];
-      let putConflict = false; let holdCommit = true; let batchUnpushed = false; let pullDiverges = false; let forgetRepositories = false; let runningActions = false; let publishEarly = false; let operationMissing = false; let lastOperation = null;
+      let putConflict = false; let holdCommits = false; let batchUnpushed = false; let pullDiverges = false; let forgetRepositories = false; let runningActions = false; let publishEarly = false; let operationMissing = false; let lastOperation = null;
       const customDiffs = {}; const fullDiffs = {}; const heldDiffs = []; let holdDiffs = false; let failNextDiff = false; window.gitScenarios = [];
       const calls = []; const held = []; let holdStatuses = false; let commitHeld; let batchFails = false;
       const ok = body => ({ok:true,status:200,json:async()=>structuredClone(body)});
-      const discovery = {id:'scan',state:'done',outcomes:[{repositoryId:'discovery',state:'success',message:'Completed'}],discovery:{repositories:[{id:'r1',name:'api',path:'api'},{id:'r2',name:'web',path:'web'}],warnings:[],complete:true}};
+      const discovery = {id:'scan',state:'done',outcomes:[{repositoryId:'discovery',state:'success',message:'Completed'}],discovery:{repositories:[{id:'r1',name:'api',displayName:'api',absolutePath:'/work/api'},{id:'r2',name:'web',displayName:'web',absolutePath:'/work/web'}],warnings:[],complete:true}};
       window.fetch = async (url, options={}) => {
         const data = options.body ? JSON.parse(options.body) : null; calls.push({url,data});
         if (url.endsWith('/repositories') || url.endsWith('/repositories?refresh=true')) { if (url.endsWith('?refresh=true')) forgetRepositories=false; return ok(discovery); }
@@ -480,22 +548,24 @@ def build_harness():
             options.signal?.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))); heldDiffs.push(entry); });
         }
         if (url.endsWith('/stage') || url.endsWith('/unstage')) return ok(statuses.get(id));
-        if (url.endsWith('/commits')) return ok({id:'batch-'+calls.length,state:'done',outcomes:data.targets.map(t=>({repositoryId:t.id,state:batchUnpushed?'committed':batchFails && t.id==='r2'?'failed':'success',message:batchFails && t.id==='r2'?'Hook refused':'Completed'}))});
+        if (url.endsWith('/commits')) {
+          const done={id:'batch-'+calls.length,state:'done',outcomes:data.targets.map(t=>({repositoryId:t.id,state:batchUnpushed?'committed':batchFails && t.id==='r2'?'failed':'success',message:batchFails && t.id==='r2'?'Hook refused':'Completed'}))};
+          if (!holdCommits) return ok(done);
+          return await new Promise(resolve=>commitHeld=()=>resolve(ok(done)));
+        }
         if (url.endsWith('/remotes')) return ok(['origin','backup']);
         if (url.endsWith('/git/sync')) return ok(syncSummary);
-        if (url.endsWith('/amend')) return ok(amendState);
         if (url.endsWith('/stashes')) return ok(stashes);
         if (url.endsWith('/references')) return ok({current:'main',local:[{type:'LOCAL',ref:'refs/heads/main',name:'main'},{type:'LOCAL',ref:'refs/heads/feature',name:'feature'}],
           remote:[{type:'REMOTE',ref:'refs/remotes/origin/release',name:'origin/release'}],tags:[{type:'TAG',ref:'refs/tags/v1',name:'v1'}]});
         if (url.endsWith('/checkout')) return ok({current:data.reference.replace('refs/heads/','')});
         if (url.endsWith('/branches')) return ok({current:data.name});
-        if (url.endsWith('/open-editor')) return ok({opened:'api'});
+        if (url.endsWith('/open-editor')) return ok({opened:'/work/api'});
+        if (url.endsWith('/open-explorer')) return ok({opened:'/work/api'});
         if (url.includes('/file?path=')) { const path=new URL(url,'http://test').searchParams.get('path');
           return ok(path==='locked.bin' ? {path,editable:false,reason:'Binary or non-UTF-8 files cannot be edited here.'} : {path,content:'line one\n',hash:'h1',eol:'crlf',bom:false,finalNewline:true,editable:true,reason:null}); }
         if (url.endsWith('/file') && options.method==='PUT') return putConflict ? {ok:false,status:409,json:async()=>({message:'The file changed on disk.'})} : ok({...data,editable:true,hash:'h2',eol:'crlf'});
         if (url.includes('/log?')) { const skip=Number(new URL(url,'http://test').searchParams.get('skip')); return ok(skip ? {commits:[commitAt(2,true)],more:false,upstream:true} : {commits:[commitAt(0,false),commitAt(1,true)],more:true,upstream:true}); }
-        if (url.endsWith('/commit') && !holdCommit) return ok({id:'commit-'+calls.length,state:'done',outcomes:[{repositoryId:id,state:'success',message:'Committed abc and pushed'}]});
-        if (url.endsWith('/commit')) return await new Promise(resolve=>commitHeld=()=>resolve(ok({id:'commit',state:'done',outcomes:[{repositoryId:'r1',state:'success',message:'Completed'}]})));
         if (url.endsWith('/actions')) {
           const id='action-'+calls.length; const refused=pullDiverges && data.action==='pull';
           const done={id,state:'done',outcomes:data.targets.map(t=>({repositoryId:t.id,state:refused?'failed':'success',message:refused?'Not possible to fast-forward, aborting.':'Completed'}))};
@@ -510,6 +580,14 @@ def build_harness():
     '''
     tests = r'''
       const checks = {}; const flush = () => new Promise(resolve=>setTimeout(resolve,25));
+      // Commit and Commit & Push open a confirmation listing the targets; these answer it.
+      window.answerCommit = async confirm => {
+        const $=id=>document.getElementById(id);
+        for (let i=0;i<20 && !$('git-commit-dialog').open;i++) await flush();
+        const opened=$('git-commit-dialog').open;
+        $('git-commit-dialog').querySelector(confirm ? '#git-commit-dialog-confirm' : 'button[value="cancel"]').click();
+        await flush(); await flush(); return opened;
+      };
       async function run() {
         const W=WorkspaceGit; const $=id=>document.getElementById(id);
         window.errorDialogs=[]; const showError=ConfirmationModal.error; ConfirmationModal.error=options=>{ errorDialogs.push(options.message); return showError(options); };
@@ -533,13 +611,14 @@ def build_harness():
         checks.wholeFileStage=calls.filter(c=>c.url.endsWith('/stage')).at(-1).data.lines===null;
         $('git-commit-message').value='draft one'; $('git-commit-message').dispatchEvent(new Event('input'));
         await W.chooseRepository('r2'); $('git-commit-message').value='draft two'; $('git-commit-message').dispatchEvent(new Event('input'));
-        await W.chooseRepository('r1'); checks.repositoryDrafts = $('git-commit-message').value==='draft one';
+        // One commit form covers all marked files, so its draft is shared across repositories.
+        await W.chooseRepository('r1'); checks.commitDraftShared = $('git-commit-message').value==='draft two';
         holdStatuses=true;
         const oldRefresh=W.refreshStatuses(); await flush(); const old=held.splice(0);
         const newRefresh=W.refreshStatuses(); await flush(); const newer=held.splice(0);
         newer.forEach(item=>item.resolve(ok({...statuses.get(item.id),branch:'newer'}))); await newRefresh;
         old.forEach(item=>item.resolve(ok({...statuses.get(item.id),branch:'older'}))); await oldRefresh; holdStatuses=false;
-        checks.staleResponsesIgnored=W.state.statuses.get('r1').branch==='newer' && $('git-commit-message').value==='draft one';
+        checks.staleResponsesIgnored=W.state.statuses.get('r1').branch==='newer' && $('git-commit-message').value==='draft two';
         const before=calls.filter(c=>c.url.endsWith('/actions')).length;
         W.actionDialog('discard',['r1']); await flush();
         checks.typedDiscardRequired=$('confirmation-modal-primary').disabled;
@@ -557,13 +636,24 @@ def build_harness():
         W.actionDialog('fetch',['r1','r2']); await flush();
         checks.selectedRepositoryActions=calls.filter(c=>c.url.endsWith('/actions')).at(-1).data.targets.length===2;
         const current=statuses.get('r1'); current.files=[{path:'file.txt',index:'M',working:'M',kind:'text'}];
-        await W.refreshStatuses();
-        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await flush();
+        await W.refreshStatuses(); W.state.expanded.add('r1'); W.state.collapsedGroups.clear(); await W.chooseRepository('r1');
+        checks.commitDisabledWithoutMarks=$('git-commit-button').disabled && $('git-commit-help').textContent.includes('Only marked files are committed');
+        const stagedChoice=[...W.state.views.get('r1').buttons.entries()].find(([key])=>key.startsWith('staged') && key.endsWith('file.txt'))[1].checkbox;
+        stagedChoice.click();
+        checks.noCommitScopeOrAmend=!$('git-commit-mode') && !$('git-amend') && $('git-commit-button').textContent==='Commit 1 file' && !$('git-commit-button').disabled;
+        const commitsBefore=calls.filter(c=>c.url.endsWith('/commits')).length;
+        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true}));
+        for (let i=0;i<20 && !$('git-commit-dialog').open;i++) await flush();
+        checks.commitConfirmationListsTargets=$('git-commit-dialog').open && $('git-commit-dialog-list').textContent.includes('api') && $('git-commit-dialog-list').textContent.includes('file.txt')
+          && $('git-commit-dialog-list').textContent.includes('staged version') && $('git-commit-dialog-summary').textContent.includes('Nothing is pushed') && !$('git-commit-dialog-list').textContent.includes('/work/');
+        await answerCommit(false);
+        checks.cancelledCommitSendsNothing=calls.filter(c=>c.url.endsWith('/commits')).length===commitsBefore && $('git-commit-message').value==='draft two' && W.state.files.get('r1').size===1;
+        holdCommits=true; $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await answerCommit(true);
         $('git-commit-message').value='edited while committing'; $('git-commit-message').dispatchEvent(new Event('input'));
-        commitHeld(); await flush(); await flush();
+        commitHeld(); holdCommits=false; await flush(); await flush();
         checks.commitPreservesNewDraft=$('git-commit-message').value==='edited while committing';
-        const commit=calls.find(c=>c.url.endsWith('/commit'));
-        checks.commitSnapshot=commit.data.message==='draft one' && commit.data.version==='s1';
+        const commit=calls.filter(c=>c.url.endsWith('/commits')).at(-1);
+        checks.commitSnapshot=commit.data.message==='draft two' && commit.data.targets.length===1 && commit.data.targets[0].version.startsWith('full-') && commit.data.targets[0].files[0].area==='staged' && commit.data.push===false;
         document.body.classList.add('git-show-diff'); $('git-back').click(); checks.mobileBack=!document.body.classList.contains('git-show-diff');
         const input=$('git-diff').querySelector('[data-line]'); input.focus(); input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
         checks.keyboardLineNavigation=document.activeElement!==input;
@@ -573,12 +663,13 @@ def build_harness():
         const selectedCheckbox=(id,area,path)=>W.state.views.get(id).buttons.get(area+'\0'+path).checkbox;
         // Construct the NUL key without relying on HTML parsing of embedded NUL characters.
         const fileChoice=(id,area,path)=>[...W.state.views.get(id).buttons.entries()].find(([key])=>key.startsWith(area) && key.endsWith(path))[1].checkbox;
+        W.state.expanded.add('r1'); W.state.collapsedGroups.clear(); await W.refreshStatuses();
         fileChoice('r1','changes','file.txt').click();
-        checks.fileCheckboxSelectsCurrent=W.state.files.get('r1').get('file.txt').area==='changes' && W.state.commitMode==='selected-current';
+        checks.fileCheckboxSelectsCurrent=W.state.files.get('r1').get('file.txt').area==='changes' && W.commitTargets().length===1;
         W.state.views.get('r1').toggle.click(); await W.refreshStatuses();
         checks.repositoryCollapseSurvivesRefresh=!W.state.expanded.has('r1') && W.state.views.get('r1').toggle.getAttribute('aria-expanded')==='false' && W.state.files.get('r1').size===1;
         await W.chooseRepository('r2'); fileChoice('r2','changes','web.txt').click();
-        checks.filesAcrossRepositories=W.commitTargets().length===2 && W.state.commitMode==='selected-all';
+        checks.filesAcrossRepositories=W.commitTargets().length===2 && $('git-commit-button').textContent==='Commit 2 files in 2 repositories';
         $('git-commit-message').value='Batch common message'; $('git-commit-message').dispatchEvent(new Event('input'));
         await W.chooseRepository('r1'); checks.batchDraftAcrossRepositories=$('git-commit-message').value==='Batch common message';
         W.state.views.get('r1').toggle.click();
@@ -586,19 +677,23 @@ def build_harness():
         checks.oneSourcePerFile=W.state.files.get('r1').size===1 && !fileChoice('r1','changes','file.txt').checked && fileChoice('r1','staged','file.txt').checked;
         W.state.views.get('r1').groups.get('Changes').toggle.click(); await W.refreshStatuses();
         checks.groupCollapseSurvivesRefresh=W.state.views.get('r1').groups.get('Changes').list.hidden;
-        W.setCommitMode('selected-current'); checks.currentCommitTargetsOnlyCurrent=W.commitTargets().length===1 && W.commitTargets()[0].id==='r1';
+        W.state.expanded.add('r2'); await W.refreshStatuses(); fileChoice('r2','changes','web.txt').click();
+        checks.commitTargetsOnlyRepositoriesWithMarks=W.commitTargets().length===1 && W.commitTargets()[0].id==='r1';
         $('git-commit-message').value='Current selected file'; $('git-commit-message').dispatchEvent(new Event('input'));
-        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await flush(); await flush();
+        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await answerCommit(true);
         const single=calls.filter(c=>c.url.endsWith('/commits')).at(-1);
-        checks.currentSelectedCommitPayload=single.data.targets.length===1 && single.data.targets[0].files[0].area==='staged';
-        checks.successClearsOnlySuccessfulSelections=!W.state.files.get('r1').size && W.state.files.get('r2').size===1;
-        fileChoice('r1','staged','file.txt').click(); W.setCommitMode('selected-all'); batchFails=true;
+        checks.markedCommitPayload=single.data.targets.length===1 && single.data.targets[0].files[0].area==='staged';
+        checks.successClearsCommittedSelections=!W.state.files.get('r1').size;
+        fileChoice('r2','changes','web.txt').click(); fileChoice('r1','staged','file.txt').click(); batchFails=true;
         $('git-commit-message').value='Partial batch'; $('git-commit-message').dispatchEvent(new Event('input'));
-        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await flush(); await flush();
+        $('git-commit-form').dispatchEvent(new Event('submit',{cancelable:true})); await answerCommit(true);
         const batch=calls.filter(c=>c.url.endsWith('/commits')).at(-1);
         checks.multipleCommitPayload=batch.data.targets.length===2 && batch.data.message==='Partial batch' && batch.data.targets.every(t=>t.version.startsWith('full-'));
         checks.failedSelectionsAndDraftRetained=!W.state.files.get('r1').size && W.state.files.get('r2').size===1 && $('git-commit-message').value==='Partial batch';
+        batchFails=false;
         for(const id of ['r1','r2']) { const checkbox=W.state.views.get(id).checkbox; if(!checkbox.checked) checkbox.click(); }
+        // A file in both areas is marked once, from Changes.
+        checks.repositoryCheckboxMarksAllFiles=W.state.files.get('r1').size===1 && W.state.files.get('r1').get('file.txt').area==='changes' && W.state.views.get('r1').checkbox.checked;
         checks.pushSelectedVisible=!$('git-push-selected').disabled && $('git-push-selected').textContent.includes('(2)');
         $('git-push-selected').click(); await flush(); await flush();
         const push=calls.filter(c=>c.url.endsWith('/actions')).at(-1);

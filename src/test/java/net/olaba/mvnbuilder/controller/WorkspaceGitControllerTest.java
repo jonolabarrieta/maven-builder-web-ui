@@ -17,17 +17,17 @@ import java.util.*;
 
 class WorkspaceGitControllerTest {
     @TempDir Path base;
-    GitBranchService branchService; net.olaba.mvnbuilder.service.DesktopLauncherService launcher = mock(net.olaba.mvnbuilder.service.DesktopLauncherService.class); net.olaba.mvnbuilder.repository.MavenProjectRepository projects;
-    GitCommandRunner git; GitRepositoryActionService actions; Workspace workspace; WorkspaceGitDiscoveryService discovery;
+    GitBranchService branchService; net.olaba.mvnbuilder.service.DesktopLauncherService launcher = mock(net.olaba.mvnbuilder.service.DesktopLauncherService.class); net.olaba.mvnbuilder.repository.MavenProjectRepository mavenProjects;
+    RegisteredProjects projects; GitCommandRunner git; GitRepositoryActionService actions; Workspace workspace; WorkspaceGitDiscoveryService discovery;
     MockMvc mvc; String prefix; String repository;
     @BeforeEach void setup() throws Exception {
-        git = new GitCommandRunner(); discovery = new WorkspaceGitDiscoveryService(git); var changes = new GitChangeService(git);
+        git = new GitCommandRunner(); projects = new RegisteredProjects(); discovery = new WorkspaceGitDiscoveryService(git, projects); var changes = new GitChangeService(git);
         actions = new GitRepositoryActionService(discovery, changes, git);
         workspace = new Workspace(); workspace.setId(1L); workspace.setName("Fixture"); workspace.setBasePath(base.toString());
-        git.text(base, "init", "-b", "main"); Files.writeString(base.resolve("new.txt"), "content\n");
+        git.text(base, "init", "-b", "main"); Files.writeString(base.resolve("new.txt"), "content\n"); projects.add(base);
         repository = discovery.discover(workspace).repositories().getFirst().id();
-        projects = mock(net.olaba.mvnbuilder.repository.MavenProjectRepository.class);
-        branchService = new GitBranchService(new net.olaba.mvnbuilder.service.GitService(), git, projects);
+        mavenProjects = mock(net.olaba.mvnbuilder.repository.MavenProjectRepository.class);
+        branchService = new GitBranchService(new net.olaba.mvnbuilder.service.GitService(), git, mavenProjects);
         WorkspaceService workspaces = mock(WorkspaceService.class); when(workspaces.getWorkspace(1L)).thenReturn(Optional.of(workspace)); when(workspaces.getWorkspace(2L)).thenReturn(Optional.empty());
         mvc = MockMvcBuilders.standaloneSetup(new WorkspaceGitController(workspaces, discovery, changes, actions, new GitSyncService(discovery, changes, git), new GitHistoryService(git, changes), branchService, launcher, new GitFileEditService(git, changes))).build(); prefix = "/workspaces/1/git";
     }
@@ -76,15 +76,16 @@ class WorkspaceGitControllerTest {
         mvc.perform(get(prefix + "/repositories/" + repository + "/untracked").param("dir", "missing/")).andExpect(status().isConflict());
         mvc.perform(get(prefix + "/repositories/" + repository + "/status").param("full", "true")).andExpect(status().isOk()).andExpect(jsonPath("$.version").isNotEmpty());
     }
-    @Test void discoveryReusesTheLastScanUnlessRefreshedOrTheBaseChanges() throws Exception {
+    @Test void discoveryReusesTheLastResultUnlessRefreshedOrProjectsChange() throws Exception {
         var first = actions.discover(workspace, true);
         while (actions.operation(workspace, first.id()).state().equals("running")) Thread.sleep(10);
-        git.text(Files.createDirectory(base.resolve("added")), "init", "-b", "main");
-        mvc.perform(get(prefix + "/repositories")).andExpect(jsonPath("$.state").value("done")).andExpect(jsonPath("$.discovery.repositories.length()").value(1));
+        Path added = Files.createDirectory(base.resolve("added")); git.text(added, "init", "-b", "main");
+        mvc.perform(get(prefix + "/repositories")).andExpect(jsonPath("$.state").value("done")).andExpect(jsonPath("$.discovery.repositories.length()").value(1))
+                .andExpect(jsonPath("$.discovery.repositories[0].absolutePath").value(base.toRealPath().toString())).andExpect(jsonPath("$.discovery.repositories[0].path").doesNotExist());
         String refreshed = new com.fasterxml.jackson.databind.ObjectMapper().readTree(mvc.perform(get(prefix + "/repositories").param("refresh", "true")).andReturn().getResponse().getContentAsString()).get("id").asText();
         while (actions.operation(workspace, refreshed).state().equals("running")) Thread.sleep(10);
-        assertEquals(2, actions.operation(workspace, refreshed).discovery().repositories().size());
-        workspace.setBasePath(base.resolve("added").toString());
+        assertEquals(1, actions.operation(workspace, refreshed).discovery().repositories().size(), "unregistered repositories are not listed");
+        projects.add(added);
         mvc.perform(get(prefix + "/repositories")).andExpect(jsonPath("$.outcomes[0].message").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.startsWith("Showing the last"))));
     }
     @Test void operationTransitionsArePublishedToTheWorkspaceTopic() throws Exception {
@@ -101,6 +102,20 @@ class WorkspaceGitControllerTest {
         mvc.perform(get(prefix + "/repositories/" + repository + "/remotes")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
         git.text(base, "remote", "add", "upstream", base.resolve("elsewhere.git").toString());
         mvc.perform(get(prefix + "/repositories/" + repository + "/remotes")).andExpect(jsonPath("$[0]").value("upstream"));
+    }
+    @Test void workspaceWithoutProjectsExplainsWhereRepositoriesComeFrom() throws Exception {
+        Workspace empty = new Workspace(); empty.setId(4L); empty.setBasePath(base.toString());
+        var operation = new GitRepositoryActionService(new WorkspaceGitDiscoveryService(git, new RegisteredProjects()), new GitChangeService(git), git);
+        try {
+            var job = operation.discover(empty, true);
+            while (operation.operation(empty, job.id()).state().equals("running")) Thread.sleep(10);
+            var done = operation.operation(empty, job.id());
+            assertTrue(done.discovery().repositories().isEmpty());
+            assertTrue(done.outcomes().getFirst().message().contains("repositories of workspace projects"), done.toString());
+        } finally { operation.close(); }
+        var job = actions.discover(workspace, true);
+        while (actions.operation(workspace, job.id()).state().equals("running")) Thread.sleep(10);
+        assertEquals("1 repository from 1 project.", actions.operation(workspace, job.id()).outcomes().getFirst().message());
     }
     @Test void syncEndpointSummarizesDiscoveredRepositories() throws Exception {
         mvc.perform(get(prefix + "/sync")).andExpect(status().isOk()).andExpect(jsonPath("$.repositories[0].id").value(repository))
@@ -122,7 +137,7 @@ class WorkspaceGitControllerTest {
         Path nested = Files.createDirectories(base.resolve("nested")); git.text(nested, "init", "-b", "main");
         var inside = new net.olaba.mvnbuilder.entities.MavenProject(); inside.setAbsolutePath(base.toString());
         var other = new net.olaba.mvnbuilder.entities.MavenProject(); other.setAbsolutePath(nested.toString());
-        when(projects.findByWorkspaceIdOrderByExecutionOrderAsc(1L)).thenReturn(List.of(inside, other));
+        when(mavenProjects.findByWorkspaceIdOrderByExecutionOrderAsc(1L)).thenReturn(List.of(inside, other));
         mvc.perform(get(prefix + "/repositories/" + repository + "/references")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.current").value("main")).andExpect(jsonPath("$.local[?(@.name=='feature/demo')].ref").value("refs/heads/feature/demo"))
                 .andExpect(jsonPath("$.tags[0].name").value("v1"));
@@ -137,8 +152,20 @@ class WorkspaceGitControllerTest {
         mvc.perform(post(prefix + "/repositories/" + repository + "/branches").contentType("application/json").content("{\"name\":\"-f\"}")).andExpect(status().isBadRequest());
         mvc.perform(post(prefix + "/repositories/" + repository + "/branches").contentType("application/json").content("{\"name\":\"main\"}")).andExpect(status().isConflict());
     }
+    @Test void openExplorerOpensTheRepositoryRootOnly() throws Exception {
+        mvc.perform(post(prefix + "/repositories/" + repository + "/open-explorer")).andExpect(status().isOk()).andExpect(jsonPath("$.opened").value(base.toRealPath().toString()));
+        verify(launcher).openExplorer(base.toRealPath().toFile());
+        mvc.perform(post(prefix + "/repositories/unknown/open-explorer")).andExpect(status().isNotFound());
+        doThrow(new java.io.IOException("missing")).when(launcher).openExplorer(any());
+        mvc.perform(post(prefix + "/repositories/" + repository + "/open-explorer")).andExpect(status().isUnprocessableEntity());
+        verify(launcher, times(2)).openExplorer(any());
+    }
+    @Test void stagedCommitAndAmendEndpointsAreGone() throws Exception {
+        mvc.perform(post(prefix + "/repositories/" + repository + "/commit").contentType("application/json").content("{\"message\":\"x\"}")).andExpect(status().is4xxClientError());
+        mvc.perform(get(prefix + "/repositories/" + repository + "/amend")).andExpect(status().is4xxClientError());
+    }
     @Test void openEditorLaunchesVsCodeAtTheRepositoryRoot() throws Exception {
-        mvc.perform(post(prefix + "/repositories/" + repository + "/open-editor")).andExpect(status().isOk()).andExpect(jsonPath("$.opened").value("."));
+        mvc.perform(post(prefix + "/repositories/" + repository + "/open-editor")).andExpect(status().isOk()).andExpect(jsonPath("$.opened").value(base.toRealPath().toString()));
         verify(launcher).openVsCode(base.toRealPath().toFile());
         doThrow(new java.io.IOException("missing")).when(launcher).openVsCode(any());
         mvc.perform(post(prefix + "/repositories/" + repository + "/open-editor")).andExpect(status().isUnprocessableEntity());

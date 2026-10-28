@@ -17,7 +17,7 @@ public final class GitSelectedCommitService {
             throw new GitProblem(400, "Select between 1 and 4096 files for each repository.");
         changes.expect(repository, target.version());
         for (String marker : List.of("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"))
-            if (Files.exists(repository.gitDir().resolve(marker))) throw new GitProblem(422, "Finish the current merge, rebase, cherry-pick, or revert before committing selected files. Use the normal staged commit where appropriate.");
+            if (Files.exists(repository.gitDir().resolve(marker))) throw new GitProblem(422, "Finish the current merge, rebase, cherry-pick or revert before committing. Conclude it outside the Git view, for example with Open in VS Code or a terminal.");
         Status status = changes.status(repository);
         if (status.files().stream().anyMatch(file -> file.kind().equals("conflict"))) throw new GitProblem(422, "Resolve all conflicts before committing selected files.");
         List<Planned> plan = new ArrayList<>(); Set<String> paths = new HashSet<>();

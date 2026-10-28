@@ -38,9 +38,10 @@ public class GitSyncService {
                 String[] fields = row.split("\0", -1);
                 branches.add(branch(fields[0], fields[3].equals("*"), fields[1].isEmpty() ? null : fields[1], fields[2]));
             }
-            return new SyncRepository(descriptor.id(), descriptor.path(), status.branch(), status.files().size(), lastFetch(repository), List.copyOf(branches), null);
+            branches.sort(Comparator.comparing((SyncBranch branch) -> !branch.current()));
+            return new SyncRepository(descriptor.id(), descriptor.name(), descriptor.displayName(), descriptor.absolutePath(), status.branch(), status.files().size(), lastFetch(repository), List.copyOf(branches), null);
         } catch (GitProblem e) {
-            return new SyncRepository(descriptor.id(), descriptor.path(), null, 0, null, List.of(), e.getMessage());
+            return new SyncRepository(descriptor.id(), descriptor.name(), descriptor.displayName(), descriptor.absolutePath(), null, 0, null, List.of(), e.getMessage());
         }
     }
     /** Parses %(upstream:track,nobracket): "ahead 2, behind 1", "ahead 2", "behind 1", "gone" or empty when in sync. */

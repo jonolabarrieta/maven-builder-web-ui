@@ -725,9 +725,20 @@ inherits the application color roles. */
     line-height:1.6;
     color:#475569;
 }
-.git-sync-dialog {
-    width:min(980px, calc(100vw - 32px));
-    max-height:calc(100dvh - 48px);
+/* Large by default and resizable from the corner; the table takes the remaining height. */
+.git-sync-dialog[open] {
+    /* Stored sizes are border-box sizes, so restoring one does not grow the dialog. */
+    box-sizing:border-box;
+    display:flex;
+    flex-direction:column;
+    width:min(1280px, 94vw);
+    height:min(820px, 86dvh);
+    min-width:min(560px, 94vw);
+    min-height:320px;
+    max-width:98vw;
+    max-height:95dvh;
+    resize:both;
+    overflow:hidden;
 }
 .git-sync-heading {
     display:flex;
@@ -758,7 +769,8 @@ inherits the application color roles. */
     padding:6px 10px;
 }
 .git-sync-table {
-    max-height:min(60dvh, 560px);
+    flex:1 1 auto;
+    min-height:0;
     overflow:auto;
     border:1px solid #e2e8f0;
     border-radius:10px;
@@ -778,7 +790,7 @@ inherits the application color roles. */
     padding:8px 10px;
     border-bottom:1px solid #e2e8f0;
 }
-.git-sync-table th:nth-child(n+4) {
+.git-sync-table th:nth-child(n+3):nth-child(-n+5) {
     text-align:right;
 }
 .git-sync-table td {
@@ -786,10 +798,39 @@ inherits the application color roles. */
     border-bottom:1px solid #f1f5f9;
     vertical-align:top;
 }
+.git-sync-repository {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+}
 .git-sync-repository strong {
-    display:block;
-    font-weight:600;
+    font-weight:650;
     overflow-wrap:anywhere;
+}
+.git-sync-repository-row td {
+    background:#fbfcfe;
+    border-top:1px solid #e2e8f0;
+}
+.git-sync-branch-row .git-sync-branch {
+    padding-left:42px;
+}
+.git-page .git-sync-toggle {
+    width:22px;
+    height:22px;
+    padding:0;
+}
+.git-sync-others {
+    font-size:11px;
+    color:#64748b;
+}
+.git-sync-toolbar input[type=search] {
+    font:inherit;
+    font-size:12px;
+    width:170px;
+    padding:6px 9px;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
 }
 .git-sync-fetch {
     font-size:11px;
@@ -1033,16 +1074,6 @@ inherits the application color roles. */
 .git-filter-count {
     color:#64748b;
     font-variant-numeric:tabular-nums;
-}
-.git-amend {
-    display:flex;
-    align-items:center;
-    gap:6px;
-    font-size:11px;
-    color:#334155;
-}
-.git-amend[hidden] {
-    display:none;
 }
 .git-dialog-field {
     display:flex;
@@ -1331,4 +1362,242 @@ inherits the application color roles. */
     .git-commit-scope label, .git-commit-scope > span { width: 100%; }
     .git-commit-scope select { width: 100%; }
     .git-commit-buttons button { white-space: normal; }
+}
+
+/* Branch label shown next to repository names. */
+.git-branch-badge {
+    display:inline-block;
+    max-width:100%;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    vertical-align:middle;
+    padding:1px 8px;
+    border:1px solid #c7d2fe;
+    border-radius:999px;
+    background:#eef2ff;
+    color:#3730a3;
+    font:650 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.git-branch-badge.is-detached {
+    border-color:#fcd34d;
+    background:#fef3c7;
+    color:#92400e;
+}
+.git-repo-meta {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:4px 8px;
+}
+.git-repo-upstream {
+    color:#526174;
+}
+.git-page .git-download {
+    margin-left:auto;
+    font-size:11px;
+    padding:3px 8px;
+}
+
+/* Commit confirmation. */
+.git-commit-dialog {
+    width:min(720px, calc(100vw - 32px));
+}
+.git-commit-dialog-message q {
+    font-weight:600;
+    color:#1e293b;
+}
+.git-commit-dialog-list {
+    list-style:none;
+    margin:12px 0 0;
+    padding:0;
+    max-height:50dvh;
+    overflow:auto;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+}
+.git-commit-dialog-repository {
+    padding:10px 12px;
+    border-bottom:1px solid #f1f5f9;
+}
+.git-commit-dialog-repository:last-child {
+    border-bottom:0;
+}
+.git-commit-dialog-heading {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+}
+.git-commit-dialog-count {
+    margin-left:auto;
+    font-size:11px;
+    color:#64748b;
+}
+.git-commit-dialog-repository ul {
+    list-style:none;
+    margin:6px 0 0;
+    padding:0 0 0 4px;
+}
+.git-commit-dialog-repository li {
+    display:flex;
+    gap:8px;
+    font-size:12px;
+    line-height:1.7;
+}
+.git-commit-dialog-repository code {
+    overflow-wrap:anywhere;
+}
+.git-commit-dialog-area {
+    margin-left:auto;
+    flex:none;
+    font-size:11px;
+    color:#64748b;
+}
+
+/* Log window: commits on the left, read-only comparison on the right. */
+.git-log-dialog[open] {
+    display:flex;
+    flex-direction:column;
+    width:min(1280px, 94vw);
+    height:min(820px, 86dvh);
+    max-width:98vw;
+    max-height:95dvh;
+    resize:both;
+    overflow:hidden;
+}
+.git-log-body {
+    flex:1 1 auto;
+    min-height:0;
+    display:grid;
+    grid-template-columns:minmax(260px, 2fr) 3fr;
+    gap:12px;
+}
+.git-log-commits,
+.git-log-comparison {
+    min-height:0;
+    overflow:auto;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+}
+.git-log-commits ol {
+    list-style:none;
+    margin:0;
+    padding:4px;
+}
+.git-page #git-log-more {
+    margin:6px 8px 10px;
+}
+.git-log-comparison {
+    display:flex;
+    flex-direction:column;
+}
+.git-log-comparison > strong {
+    position:sticky;
+    top:0;
+    padding:8px 10px;
+    background:#f8fafc;
+    border-bottom:1px solid #e2e8f0;
+    font-size:12px;
+    font-weight:600;
+    overflow-wrap:anywhere;
+}
+.git-log-diff {
+    font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.git-log-line {
+    display:grid;
+    grid-template-columns:44px 44px 16px 1fr;
+}
+.git-log-line.is-added {
+    background:#ecfdf3;
+}
+.git-log-line.is-deleted {
+    background:#fef2f2;
+}
+.git-log-number {
+    padding-right:6px;
+    text-align:right;
+    color:#94a3b8;
+    user-select:none;
+}
+.git-log-sign {
+    color:#64748b;
+    user-select:none;
+}
+.git-log-text {
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+}
+@media (max-width:760px) {
+    .git-log-body {
+        grid-template-columns:1fr;
+        grid-template-rows:1fr 1fr;
+    }
+}
+
+/* Session operation history. */
+.git-operation-tools {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:4px 0;
+    font-size:11px;
+    color:#64748b;
+}
+.git-page .git-operation-tools button,
+.git-page .git-operation-download {
+    font-size:11px;
+    padding:2px 8px;
+}
+.git-operation-history {
+    list-style:none;
+    margin:0;
+    padding:0;
+}
+.git-operation-entry {
+    padding:5px 0;
+    border-top:1px solid #f1f5f9;
+}
+.git-operation-entry-heading {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+}
+.git-operation-time {
+    font-size:11px;
+    color:#64748b;
+    font-variant-numeric:tabular-nums;
+}
+.git-operation-state {
+    font-size:11px;
+    padding:0 6px;
+    border-radius:999px;
+    background:#f1f5f9;
+    color:#475569;
+}
+.git-operation-entry[data-state=success] .git-operation-state {
+    background:#dcfce7;
+    color:#166534;
+}
+.git-operation-entry[data-state=failed] .git-operation-state {
+    background:#fee2e2;
+    color:#b91c1c;
+}
+.git-operation-entry[data-state=partial] .git-operation-state,
+.git-operation-entry[data-state=running] .git-operation-state {
+    background:#fef3c7;
+    color:#92400e;
+}
+.git-page .git-operation-download {
+    margin-left:auto;
+}
+.git-operation-entry ul {
+    list-style:none;
+    margin:2px 0 0;
+    padding:0 0 0 10px;
 }

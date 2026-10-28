@@ -15,22 +15,24 @@ class WorkspaceGitTest {
     @TempDir Path base;
     GitCommandRunner git;
     WorkspaceGitDiscoveryService discovery;
+    RegisteredProjects projects;
     GitChangeService changes;
     GitRepositoryActionService actions;
     Workspace workspace;
     Resolved repository;
     Path root;
     @BeforeEach void setup() throws Exception {
-        git = new GitCommandRunner(); discovery = new WorkspaceGitDiscoveryService(git);
+        git = new GitCommandRunner(); projects = new RegisteredProjects(); discovery = new WorkspaceGitDiscoveryService(git, projects);
         changes = new GitChangeService(git); actions = new GitRepositoryActionService(discovery, changes, git);
         workspace = new Workspace(); workspace.setId(1L); workspace.setName("Fixture"); workspace.setBasePath(base.toString());
         root = Files.createDirectory(base.resolve("plain-repository"));
         git.text(root, "init", "-b", "main"); git.text(root, "config", "user.name", "Fixture"); git.text(root, "config", "user.email", "fixture@example.invalid");
         git.text(root, "config", "core.autocrlf", "false");
+        projects.add(root);
         rediscover();
     }
     @AfterEach void close() { actions.close(); git.close(); }
-    void rediscover() { var result = discovery.discover(workspace); repository = discovery.repository(workspace, result.repositories().stream().filter(r -> r.path().equals("plain-repository")).findFirst().orElseThrow().id()); }
+    void rediscover() { var result = discovery.discover(workspace); repository = discovery.repository(workspace, result.repositories().stream().filter(r -> r.name().equals("plain-repository")).findFirst().orElseThrow().id()); }
     void write(String name, String content) throws Exception { Path file = root.resolve(name); if (file.getParent() != null) Files.createDirectories(file.getParent()); Files.writeString(file, content); }
     void commitBase(String content) throws Exception { write("file.txt", content); git.text(root, "add", "--", "file.txt"); git.text(root, "commit", "-m", "Base"); }
     String index(String path) { return new String(git.run(root, "show", ":" + path).require().output(), StandardCharsets.UTF_8); }
@@ -44,24 +46,62 @@ class WorkspaceGitTest {
         while (operation.state().equals("running") && System.nanoTime() < deadline) { Thread.sleep(10); operation = actions.operation(workspace, operation.id()); }
         assertEquals("done", operation.state()); return operation;
     }
+    /** Commits exactly the given marked files of the fixture repository against a fresh snapshot. */
+    Operation commitMarked(String message, boolean push, CommitFile... files) {
+        return actions.commits(workspace, new SelectedCommit(message, List.of(new CommitTarget(repository.descriptor().id(), changes.status(repository, true).version(), List.of(files))), push));
+    }
     void success(Operation operation) throws Exception { var result = await(operation); assertTrue(result.outcomes().stream().allMatch(o -> o.state().equals("success")), result.toString()); }
     Action action(String action, String path, boolean untracked, String confirmation) {
         return new Action(action, List.of(new Target(repository.descriptor().id(), changes.status(repository, true).version())), path, untracked, confirmation);
     }
-    @Test void discoversNonMavenNestedAndLinkedWorktreesWithoutSymlinks() throws Exception {
+    @Test void discoversNestedAndLinkedWorktreesOfRegisteredProjectsOnly() throws Exception {
         commitBase("base\n");
         Path nested = Files.createDirectory(root.resolve("nested")); git.text(nested, "init", "-b", "main");
         Path worktree = base.resolve("linked"); git.text(root, "worktree", "add", "-b", "other", worktree.toString());
-        Files.createSymbolicLink(base.resolve("alias"), root);
+        Path unregistered = Files.createDirectory(base.resolve("unregistered")); git.text(unregistered, "init", "-b", "main");
+        projects.add(nested); projects.add(worktree); projects.add(Files.createDirectories(root.resolve("module/src")));
         var result = discovery.discover(workspace);
-        assertEquals(3, result.repositories().size()); assertTrue(result.complete());
-        var linked = discovery.repository(workspace, result.repositories().stream().filter(r -> r.path().equals("linked")).findFirst().orElseThrow().id());
+        assertEquals(List.of("linked", "nested", "plain-repository"), result.repositories().stream().map(Repository::displayName).toList()); assertTrue(result.complete());
+        assertEquals(worktree.toRealPath().toString(), result.repositories().getFirst().absolutePath());
+        var linked = discovery.repository(workspace, result.repositories().getFirst().id());
         assertEquals(repository.commonDir(), linked.commonDir()); assertNotEquals(repository.descriptor().id(), linked.descriptor().id());
         Workspace another = new Workspace(); another.setId(2L); another.setBasePath(base.toString());
         assertThrows(GitProblem.class, () -> discovery.repository(another, repository.descriptor().id()));
         assertThrows(GitProblem.class, () -> WorkspaceGitDiscoveryService.safePath(repository, "../outside"));
         assertThrows(GitProblem.class, () -> WorkspaceGitDiscoveryService.safePath(repository, ".git/config"));
         assertThrows(GitProblem.class, () -> WorkspaceGitDiscoveryService.safePath(repository, "nested/file"));
+    }
+    @Test void projectsOutsideTheBaseAreListedAndRemovedProjectsAreNot(@TempDir Path elsewhere) throws Exception {
+        Path outside = Files.createDirectory(elsewhere.resolve("outside")); git.text(outside, "init", "-b", "main");
+        Path removed = Files.createDirectory(base.resolve("removed")); git.text(removed, "init", "-b", "main");
+        Long outsideId = projects.add(outside); Long removedId = projects.add(removed);
+        var result = discovery.discover(workspace);
+        assertEquals(List.of("outside", "plain-repository", "removed"), result.repositories().stream().map(Repository::displayName).toList());
+        String removedRepository = result.repositories().get(2).id();
+        projects.remove(removedId);
+        // Membership changes make cached identities unknown until the next discovery.
+        assertTrue(discovery.last(workspace).isEmpty());
+        assertEquals(List.of("outside", "plain-repository"), discovery.discover(workspace).repositories().stream().map(Repository::displayName).toList());
+        assertThrows(GitProblem.class, () -> discovery.repository(workspace, removedRepository));
+        assertNotNull(discovery.repository(workspace, repository.descriptor().id()));
+        assertTrue(discovery.last(workspace).isPresent());
+        workspace.setBasePath(elsewhere.toString());
+        assertTrue(discovery.last(workspace).isPresent(), "the base folder no longer bounds the repositories");
+        assertNotNull(outsideId);
+    }
+    @Test void problemProjectsAreReportedWithoutHidingOthers() throws Exception {
+        projects.add(base.resolve("missing")); projects.add(Files.createDirectory(base.resolve("plain-folder")));
+        Path bare = base.resolve("bare.git"); git.text(base, "init", "--bare", bare.toString()); projects.add(bare);
+        var result = discovery.discover(workspace);
+        assertEquals(1, result.repositories().size());
+        assertEquals(3, result.warnings().size(), result.warnings().toString());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("missing") && w.contains("missing or unreadable")));
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("plain-folder") && w.contains("not inside a Git repository")));
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("bare")));
+    }
+    @Test void equalFolderNamesAreToldApart() {
+        var names = WorkspaceGitDiscoveryService.displayNames(List.of(Path.of("/work/a/api"), Path.of("/work/b/api"), Path.of("/work/b/web")));
+        assertEquals("a/api", names.get(Path.of("/work/a/api"))); assertEquals("b/api", names.get(Path.of("/work/b/api"))); assertEquals("web", names.get(Path.of("/work/b/web")));
     }
     @Test void firstCommitAndPartialNewFileThenUnstageLastAddition() throws Exception {
         write("file.txt", "first\nsecond\n");
@@ -72,7 +112,7 @@ class WorkspaceGitTest {
         assertTrue(git.text(root, "ls-files").isEmpty());
         Diff diff = changes.diff(repository, "file.txt", "changes");
         changes.select(repository, new Selection("file.txt", "changes", diff.version(), null, false), true);
-        success(actions.commit(workspace, repository.descriptor().id(), new Commit("Initial", changes.stagedVersion(repository))));
+        success(commitMarked("Initial", false, new CommitFile("file.txt", "staged")));
         assertFalse(changes.status(repository).unborn());
     }
     @Test void selectIndividualLinesWithinReplacementAndPreserveOtherPaths() throws Exception {
@@ -116,7 +156,7 @@ class WorkspaceGitTest {
         Diff diff = changes.diff(repository, "file.txt", "changes");
         changes.select(repository, new Selection("file.txt", "changes", diff.version(), null, false), true);
         assertTrue(git.text(root, "ls-files").isEmpty());
-        success(actions.commit(workspace, repository.descriptor().id(), new Commit("Delete all", changes.stagedVersion(repository))));
+        success(commitMarked("Delete all", false, new CommitFile("file.txt", "staged")));
         assertTrue(changes.status(repository).files().isEmpty());
     }
     @Test void discardRestoresIndexAndKeepsStagedAndUntrackedFiles() throws Exception {
@@ -125,13 +165,18 @@ class WorkspaceGitTest {
         success(actions.actions(workspace, action("discard", "file.txt", false, "confirmed")));
         assertEquals("staged\n", index("file.txt")); assertEquals("staged\n", Files.readString(root.resolve("file.txt"))); assertTrue(Files.exists(root.resolve("untracked")));
     }
-    @Test void commitIncludesOnlyIndexAndRejectsNoChangesAndStaleIndex() throws Exception {
+    @Test void commitIncludesOnlyMarkedFilesAndRejectsNoChangesAndStaleSnapshots() throws Exception {
         commitBase("base\n"); write("file.txt", "staged\n"); git.text(root, "add", "file.txt"); write("file.txt", "unstaged\n");
-        String version = changes.stagedVersion(repository);
-        success(actions.commit(workspace, repository.descriptor().id(), new Commit("Only staged", version)));
+        write("other.txt", "staged but not marked\n"); git.text(root, "add", "other.txt");
+        String version = changes.status(repository, true).version();
+        success(commitMarked("Only marked", false, new CommitFile("file.txt", "staged")));
         assertEquals("staged", git.text(root, "show", "HEAD:file.txt")); assertEquals("unstaged\n", Files.readString(root.resolve("file.txt")));
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, repository.descriptor().id(), new Commit("stale", version)));
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, repository.descriptor().id(), new Commit("empty", changes.stagedVersion(repository))));
+        assertNotEquals(0, git.run(root, "cat-file", "-e", "HEAD:other.txt").code(), "an unmarked staged file is not committed");
+        assertEquals("staged but not marked\n", index("other.txt"));
+        var stale = new CommitTarget(repository.descriptor().id(), version, List.of(new CommitFile("other.txt", "staged")));
+        assertThrows(GitProblem.class, () -> actions.commits(workspace, new SelectedCommit("stale", List.of(stale))));
+        commitBase("base\n");
+        assertThrows(GitProblem.class, () -> commitMarked("empty", false, new CommitFile("file.txt", "changes")));
     }
     @Test void binaryAndSymlinkHaveExplicitStates() throws Exception {
         Files.write(root.resolve("binary"), new byte[]{0, 1, 2});
@@ -194,15 +239,17 @@ class WorkspaceGitTest {
         git.text(root, "checkout", "main"); write("file.txt", "main\n"); git.text(root, "commit", "-am", "Main");
         assertNotEquals(0, git.run(root, "merge", "other").code());
         var diff = changes.diff(repository, "file.txt", "changes"); assertEquals("conflict", diff.kind()); assertFalse(diff.partial());
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, repository.descriptor().id(), new Commit("unresolved", changes.stagedVersion(repository))));
+        assertThrows(GitProblem.class, () -> commitMarked("unresolved", false, new CommitFile("file.txt", "changes")));
         write("file.txt", "resolved\n"); diff = changes.diff(repository, "file.txt", "changes");
         changes.select(repository, new Selection("file.txt", "changes", diff.version(), null, false), true);
         assertTrue(changes.status(repository).files().stream().noneMatch(f -> f.kind().equals("conflict")));
-        success(actions.commit(workspace, repository.descriptor().id(), new Commit("Resolved", changes.stagedVersion(repository))));
+        // Concluding the merge happens outside the Git view; the marked-file commit refuses it.
+        var refused = assertThrows(GitProblem.class, () -> commitMarked("Resolved", false, new CommitFile("file.txt", "staged")));
+        assertTrue(refused.getMessage().contains("outside the Git view"), refused.getMessage());
     }
     @Test void representativeDiscoveryAndStatusMeasurement() throws Exception {
         for (int i = 0; i < 50; i++) {
-            Path project = Files.createDirectory(base.resolve("repository-" + i)); git.text(project, "init", "-b", "main");
+            Path project = Files.createDirectory(base.resolve("repository-" + i)); git.text(project, "init", "-b", "main"); projects.add(project);
             for (int j = 0; j < 4; j++) Files.createDirectories(project.resolve("module-" + j).resolve("src/main/java"));
         }
         long start = System.nanoTime(); var found = discovery.discover(workspace); long scan = System.nanoTime() - start;
@@ -212,7 +259,7 @@ class WorkspaceGitTest {
             for (var future : futures) assertNotNull(future.get());
         }
         assertEquals(51, found.repositories().size()); assertTrue(found.complete());
-        System.out.printf("Git fixture: %d repositories, %d directories, discovery %.0f ms, bounded status %.0f ms%n", found.repositories().size(), found.visited(), scan / 1e6, (System.nanoTime() - start) / 1e6);
+        System.out.printf("Git fixture: %d repositories, %d projects, discovery %.0f ms, bounded status %.0f ms%n", found.repositories().size(), found.visited(), scan / 1e6, (System.nanoTime() - start) / 1e6);
     }
     @Test void honorsEolConversionAndDisablesPartialContentFilters() throws Exception {
         commitBase("old\n"); git.text(root, "config", "core.autocrlf", "true");
@@ -302,11 +349,11 @@ class WorkspaceGitTest {
     }
     @Test void selectedCommitBatchReportsHookFailureWithoutLosingOtherResults() throws Exception {
         commitBase("base\n"); write("file.txt", "first selected\n");
-        Path second = Files.createDirectory(base.resolve("second")); git.text(second, "init", "-b", "main");
+        Path second = Files.createDirectory(base.resolve("second")); git.text(second, "init", "-b", "main"); projects.add(second);
         git.text(second, "config", "user.name", "Fixture"); git.text(second, "config", "user.email", "fixture@example.invalid");
         Files.writeString(second.resolve("file.txt"), "second selected\n"); git.text(second, "add", "file.txt");
         Path hook = second.resolve(".git/hooks/pre-commit"); Files.writeString(hook, "#!/bin/sh\necho 'Fixture hook refused commit' >&2\nexit 1\n"); assertTrue(hook.toFile().setExecutable(true));
-        var found = discovery.discover(workspace); String id = found.repositories().stream().filter(repo -> repo.path().equals("second")).findFirst().orElseThrow().id();
+        var found = discovery.discover(workspace); String id = found.repositories().stream().filter(repo -> repo.name().equals("second")).findFirst().orElseThrow().id();
         var other = discovery.repository(workspace, id); String originalIndex = GitChangeService.fileHash(other.gitDir().resolve("index"));
         var firstTarget = new CommitTarget(repository.descriptor().id(), changes.status(repository, true).version(), List.of(new CommitFile("file.txt", "changes")));
         var secondTarget = new CommitTarget(id, changes.status(other, true).version(), List.of(new CommitFile("file.txt", "staged")));
@@ -330,7 +377,7 @@ class WorkspaceGitTest {
     }
     @Test void selectedFilesCommitAndPushAcrossTwoRepositories() throws Exception {
         commitBase("base\n");
-        Path second = Files.createDirectory(base.resolve("second")); git.text(second, "init", "-b", "main");
+        Path second = Files.createDirectory(base.resolve("second")); git.text(second, "init", "-b", "main"); projects.add(second);
         git.text(second, "config", "user.name", "Fixture"); git.text(second, "config", "user.email", "fixture@example.invalid");
         Files.writeString(second.resolve("file.txt"), "second base\n"); git.text(second, "add", "file.txt"); git.text(second, "commit", "-m", "Second base");
         Path remote1 = base.resolve("remote1.git"), remote2 = base.resolve("remote2.git");
@@ -339,7 +386,7 @@ class WorkspaceGitTest {
         git.text(second, "remote", "add", "origin", remote2.toString()); git.text(second, "push", "-u", "origin", "main");
         write("file.txt", "first selected\n"); write("new.txt", "first new selected\n"); write("excluded.txt", "first excluded\n"); git.text(root, "add", "excluded.txt");
         Files.writeString(second.resolve("file.txt"), "second staged\n"); git.text(second, "add", "file.txt"); Files.writeString(second.resolve("file.txt"), "second unstaged\n");
-        var found = discovery.discover(workspace); String id = found.repositories().stream().filter(repo -> repo.path().equals("second")).findFirst().orElseThrow().id();
+        var found = discovery.discover(workspace); String id = found.repositories().stream().filter(repo -> repo.name().equals("second")).findFirst().orElseThrow().id();
         var other = discovery.repository(workspace, id);
         var one = new CommitTarget(repository.descriptor().id(), changes.status(repository, true).version(), List.of(new CommitFile("file.txt", "changes"), new CommitFile("new.txt", "changes")));
         var two = new CommitTarget(id, changes.status(other, true).version(), List.of(new CommitFile("file.txt", "staged")));
@@ -406,13 +453,13 @@ class WorkspaceGitTest {
     @Test void commitAndPushReportsBothStepsAndNeverUndoesTheCommit() throws Exception {
         Path remote = remoteWithPeer().getParent().resolve("remote.git");
         write("file.txt", "pushed\n"); git.text(root, "add", "file.txt");
-        var pushed = await(actions.commit(workspace, repository.descriptor().id(), new Commit("Pushed", changes.stagedVersion(repository), true))).outcomes().getFirst();
+        var pushed = await(commitMarked("Pushed", true, new CommitFile("file.txt", "staged"))).outcomes().getFirst();
         String head = git.text(root, "rev-parse", "HEAD");
         assertEquals("success", pushed.state()); assertTrue(pushed.message().contains(head.substring(0, 10)) && pushed.message().contains("pushed"), pushed.message());
         assertEquals(head, git.text(remote, "rev-parse", "main"));
         Path peer = base.resolve("peer"); git.text(peer, "pull"); Files.writeString(peer.resolve("peer.txt"), "peer\n"); git.text(peer, "add", "peer.txt"); git.text(peer, "commit", "-m", "Peer"); git.text(peer, "push");
         write("file.txt", "rejected\n"); git.text(root, "add", "file.txt");
-        var rejected = await(actions.commit(workspace, repository.descriptor().id(), new Commit("Rejected", changes.stagedVersion(repository), true))).outcomes().getFirst();
+        var rejected = await(commitMarked("Rejected", true, new CommitFile("file.txt", "staged"))).outcomes().getFirst();
         String local = git.text(root, "rev-parse", "HEAD");
         assertEquals("committed", rejected.state()); assertTrue(rejected.message().contains(local.substring(0, 10)) && rejected.message().contains("push failed"), rejected.message());
         assertEquals("Rejected", git.text(root, "log", "-1", "--format=%s")); assertNotEquals(local, git.text(remote, "rev-parse", "main"));
@@ -478,9 +525,11 @@ class WorkspaceGitTest {
         git.text(peer, "checkout", "-b", "behindonly", "origin/behindonly"); Files.writeString(peer.resolve("b.txt"), "b\n"); git.text(peer, "add", "b.txt"); git.text(peer, "commit", "-m", "B"); git.text(peer, "push");
         git.text(root, "fetch"); write("pending.txt", "pending\n");
         var sync = new GitSyncService(discovery, changes, git);
-        var summary = sync.summary(workspace).repositories().stream().filter(r -> r.path().equals("plain-repository")).findFirst().orElseThrow();
+        var summary = sync.summary(workspace).repositories().stream().filter(r -> r.name().equals("plain-repository")).findFirst().orElseThrow();
         Map<String, SyncBranch> branches = new HashMap<>(); summary.branches().forEach(branch -> branches.put(branch.name(), branch));
         assertEquals("main", summary.branch()); assertEquals(1, summary.changes()); assertNotNull(summary.lastFetch());
+        // "behindonly" and "feature" sort before "main"; the current branch still comes first.
+        assertEquals("main", summary.branches().getFirst().name()); assertEquals("plain-repository", summary.displayName()); assertEquals(root.toRealPath().toString(), summary.absolutePath());
         assertTrue(branches.get("main").current()); assertEquals(1, branches.get("main").ahead()); assertEquals(1, branches.get("main").behind());
         assertFalse(branches.get("feature").current()); assertEquals(2, branches.get("feature").ahead()); assertEquals(0, branches.get("feature").behind());
         assertEquals(0, branches.get("behindonly").ahead()); assertEquals(1, branches.get("behindonly").behind());
@@ -507,25 +556,6 @@ class WorkspaceGitTest {
         assertEquals(List.of("-5", "+five"), renamed.lines().stream().filter(line -> !line.type().equals(" ")).map(line -> line.type() + line.text()).toList());
         assertThrows(GitProblem.class, () -> history.files(repository, "HEAD~1")); assertThrows(GitProblem.class, () -> history.files(repository, "--output=x"));
         assertThrows(GitProblem.class, () -> changes.commitDiff(repository, rootCommit, "../escape", null));
-    }
-    Commit amend(String message, String head) { return new Commit(message, changes.stagedVersion(repository), false, true, head); }
-    @Test void amendReplacesOnlyAnUnpushedLastCommitThatWasReviewed() throws Exception {
-        var history = new GitHistoryService(git, changes); String id = repository.descriptor().id();
-        assertFalse(history.amendState(repository).allowed());
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, id, amend("Nothing", null)));
-        commitBase("base\n"); write("file.txt", "second\n"); git.text(root, "commit", "-am", "Secnod\n\nBody text");
-        var state = history.amendState(repository); String head = state.head();
-        assertTrue(state.allowed()); assertEquals("Secnod\n\nBody text", state.message());
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, id, amend("Second", "0000000000000000000000000000000000000000")));
-        success(actions.commit(workspace, id, amend("Second", head)));
-        assertEquals("Second", git.text(root, "log", "-1", "--format=%s")); assertEquals(2, Integer.parseInt(git.text(root, "rev-list", "--count", "HEAD")));
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, id, amend("Again", head)), "the replaced commit is no longer HEAD");
-        Path remote = base.resolve("remote.git"); git.text(base, "init", "--bare", remote.toString()); git.text(root, "remote", "add", "origin", remote.toString()); git.text(root, "push", "-u", "origin", "main");
-        var pushed = history.amendState(repository);
-        assertFalse(pushed.allowed()); assertTrue(pushed.reason().contains("already pushed"));
-        assertThrows(GitProblem.class, () -> actions.commit(workspace, id, amend("Rewrite", pushed.head())));
-        Files.writeString(repository.gitDir().resolve("MERGE_HEAD"), pushed.head() + "\n");
-        assertTrue(history.amendState(repository).reason().contains("merge"));
     }
     Action stashAction(String action, StashEntry entry, String confirmation) {
         return new Action(action, List.of(new Target(repository.descriptor().id(), null)), null, false, confirmation, null, entry.ref(), entry.sha());

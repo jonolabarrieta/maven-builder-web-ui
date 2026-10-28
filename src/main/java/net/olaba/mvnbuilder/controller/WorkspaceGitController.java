@@ -57,9 +57,6 @@ public class WorkspaceGitController {
     @PostMapping("/repositories/{repositoryId}/unstage") @ResponseBody public Status unstage(@PathVariable Long workspaceId, @PathVariable String repositoryId, @RequestBody Selection selection) {
         var repository = discovery.repository(workspace(workspaceId), repositoryId); changes.select(repository, selection, false); return changes.status(repository);
     }
-    @PostMapping("/repositories/{repositoryId}/commit") @ResponseBody public Operation commit(@PathVariable Long workspaceId, @PathVariable String repositoryId, @RequestBody Commit request) {
-        return actions.commit(workspace(workspaceId), repositoryId, request);
-    }
     @PostMapping("/commits") @ResponseBody public Operation commits(@PathVariable Long workspaceId, @RequestBody SelectedCommit request) {
         return actions.commits(workspace(workspaceId), request);
     }
@@ -85,16 +82,20 @@ public class WorkspaceGitController {
         var repository = discovery.repository(workspace(workspaceId), repositoryId);
         try { launcher.openVsCode(repository.root().toFile()); }
         catch (java.io.IOException e) { throw new GitProblem(422, "Visual Studio Code could not be started. Check that the code command is available."); }
-        return Map.of("opened", repository.descriptor().path());
+        return Map.of("opened", repository.descriptor().absolutePath());
+    }
+    /** Opens the repository root in the system file explorer; the folder comes from the validated identity only. */
+    @PostMapping("/repositories/{repositoryId}/open-explorer") @ResponseBody public Map<String, String> openExplorer(@PathVariable Long workspaceId, @PathVariable String repositoryId) {
+        var repository = discovery.repository(workspace(workspaceId), repositoryId);
+        try { launcher.openExplorer(repository.root().toFile()); }
+        catch (java.io.IOException e) { throw new GitProblem(422, "The file explorer could not be started for this repository."); }
+        return Map.of("opened", repository.descriptor().absolutePath());
     }
     @GetMapping("/repositories/{repositoryId}/file") @ResponseBody public FileContent file(@PathVariable Long workspaceId, @PathVariable String repositoryId, @RequestParam String path) {
         return files.read(discovery.repository(workspace(workspaceId), repositoryId), path);
     }
     @PutMapping("/repositories/{repositoryId}/file") @ResponseBody public FileContent saveFile(@PathVariable Long workspaceId, @PathVariable String repositoryId, @RequestBody FileEdit request) {
         return files.write(discovery.repository(workspace(workspaceId), repositoryId), request.path(), request.content(), request.hash());
-    }
-    @GetMapping("/repositories/{repositoryId}/amend") @ResponseBody public AmendState amend(@PathVariable Long workspaceId, @PathVariable String repositoryId) {
-        return history.amendState(discovery.repository(workspace(workspaceId), repositoryId));
     }
     @GetMapping("/repositories/{repositoryId}/log") @ResponseBody public HistoryPage log(@PathVariable Long workspaceId, @PathVariable String repositoryId,
             @RequestParam(defaultValue = "0") int skip, @RequestParam(defaultValue = "30") int limit) {

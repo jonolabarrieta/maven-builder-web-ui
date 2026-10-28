@@ -60,13 +60,17 @@ public class GitRepositoryActionService {
         this.discovery = discovery; this.changes = changes; this.git = git;
     }
     public synchronized Operation discover(Workspace workspace) { return discover(workspace, true); }
-    /** Without {@code refresh}, the last completed scan for the same base folder is returned immediately. */
+    /** Without {@code refresh}, the last completed discovery is returned immediately while the workspace's projects are unchanged. */
     public synchronized Operation discover(Workspace workspace, boolean refresh) {
         Job job = create(workspace);
         var last = refresh ? Optional.<Discovery>empty() : discovery.last(workspace);
-        if (last.isPresent()) { job.result = last.get(); job.outcome("discovery", "success", "Showing the last repository scan. Refresh repositories to scan again."); return job.view(); }
-        job.outcome("discovery", "running", "Scanning workspace folders…");
-        submit(scans, job, "discovery", () -> job.result = discovery.discover(workspace)); return job.view();
+        if (last.isPresent()) { job.result = last.get(); job.outcome("discovery", "success", "Showing the last repository discovery. Refresh repositories to check the workspace projects again."); return job.view(); }
+        job.outcome("discovery", "running", "Finding the repositories of the workspace projects…");
+        submit(scans, job, "discovery", (java.util.function.Supplier<Done>) () -> {
+            Discovery result = discovery.discover(workspace); job.result = result;
+            if (result.visited() == 0) return new Done("success", "This workspace has no projects. The Git view lists the repositories of workspace projects; add projects to see them here.");
+            return new Done("success", result.repositories().size() + (result.repositories().size() == 1 ? " repository" : " repositories") + " from " + result.visited() + (result.visited() == 1 ? " project." : " projects."));
+        }); return job.view();
     }
     public Operation operation(Workspace workspace, String id) {
         Job job = jobs.get(id);
@@ -93,16 +97,6 @@ public class GitRepositoryActionService {
             try { Done done = action.get(); job.outcome(id, done.state(), done.message()); }
             catch (Exception error) { job.outcome(id, error instanceof GitProblem p && (p.status() == 504 || p.status() == 503) ? "uncertain" : "failed", error.getMessage() == null ? "Git operation failed. Refresh and check the repository." : error.getMessage()); }
         }); } catch (RejectedExecutionException e) { job.outcome(id, "failed", "Git queue is full. Wait for other operations to finish."); }
-    }
-    public Operation commit(Workspace workspace, String id, Commit request) {
-        Resolved repository = discovery.repository(workspace, id);
-        validateCommit(repository, request);
-        Job job = create(workspace); job.outcome(id, "queued", "Commit queued");
-        submit(workers, job, id, () -> GitMutationCoordinator.mutate(repository.commonDir(), () -> {
-            Resolved current = discovery.repository(workspace, id); validateCommit(current, request);
-            git.run(current.root(), request.message().getBytes(StandardCharsets.UTF_8), Map.of(), true, request.amend() ? new String[]{"commit", "--amend", "--file=-"} : new String[]{"commit", "--file=-"}).require();
-            return afterCommit(current, request.push());
-        })); return job.view();
     }
     public Operation commits(Workspace workspace, SelectedCommit request) {
         validateMessage(request.message());
@@ -142,19 +136,6 @@ public class GitRepositoryActionService {
     private void validateMessage(String message) {
         if (message == null || message.isBlank()) throw new GitProblem(400, "Enter a commit message.");
         if (message.length() > 65536) throw new GitProblem(400, "Commit message is too long.");
-    }
-    private void validateCommit(Resolved repository, Commit request) {
-        validateMessage(request.message());
-        Status status = changes.status(repository);
-        if (request.version() == null || !request.version().equals(status.stagedVersion())) throw GitProblem.stale();
-        if (status.files().stream().anyMatch(file -> file.kind().equals("conflict"))) throw new GitProblem(422, "Resolve and stage all conflicts before committing.");
-        if (request.amend()) {
-            AmendState amend = new GitHistoryService(git, changes).amendState(repository);
-            if (amend.head() == null || !amend.head().equals(request.head())) throw GitProblem.stale();
-            if (!amend.allowed()) throw new GitProblem(422, amend.reason());
-            return;
-        }
-        if (status.files().stream().noneMatch(file -> !Set.of(".", "?").contains(file.index()))) throw new GitProblem(422, "Stage changes before committing.");
     }
     public Operation actions(Workspace workspace, Action request) {
         if (request.action() == null || !ACTIONS.contains(request.action()) || request.targets() == null || request.targets().isEmpty() || request.targets().size() > 256)

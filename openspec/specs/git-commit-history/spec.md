@@ -1,7 +1,7 @@
 # git-commit-history Specification
 
 ## Purpose
-Let users review recent commits of a repository and correct the last commit before it is pushed, without leaving the Git view.
+Let users review recent commits of a repository and their file changes without leaving the Git view.
 
 ## Requirements
 
@@ -15,18 +15,3 @@ The view SHALL show, for the active repository, a list of recent commits on the 
 #### Scenario: View a file changed in a commit
 - **WHEN** the user selects a commit and then one of its files
 - **THEN** a read-only comparison between the commit's parent and the commit SHALL be shown, without staging controls
-
-### Requirement: Amend last unpushed commit
-The commit form SHALL offer an Amend option that replaces the last commit with the current staged changes and the given message, prefilled from the last commit's message. Amend SHALL be unavailable when the repository has no commits, when the last commit is already contained in its upstream, or during an unfinished merge, rebase, cherry-pick or revert. Amend SHALL validate the reviewed HEAD and staged snapshot and SHALL never force push.
-
-#### Scenario: Fix the last commit message
-- **WHEN** the last commit is not pushed and the user amends with a new message
-- **THEN** the last commit SHALL be replaced with the new message, including any staged changes
-
-#### Scenario: Last commit already pushed
-- **WHEN** the last commit is contained in the upstream
-- **THEN** the Amend option SHALL be disabled with an explanation
-
-#### Scenario: HEAD changed after review
-- **WHEN** HEAD changed between opening the form and submitting the amend
-- **THEN** the amend SHALL be rejected as stale and the draft preserved
