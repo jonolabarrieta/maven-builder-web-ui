@@ -32,6 +32,10 @@ Choose **Git** in a workspace to review the repositories of its projects, includ
 
 Use **Add Project → Include non-Maven folders** to register other project directories explicitly. Windows terminal shortcuts open PowerShell. After a sequential build failure, **Skip and continue** resumes the pending projects without disabling the failed project. See [Manual projects and build recovery](docs/manual-projects-and-build-recovery.md) for behavior and verification limits.
 
+### ▶️ Run workspace services
+
+Use **Run** next to **Build All** to start the services and tools a workspace needs, such as `mvn spring-boot:run`, `npm run dev` or `docker compose up`. Define them once in **More actions → RUN configuration**. Each entry has a name, an optional project, a working directory, a shell command, environment variables and an option to use the workspace's JAVA_HOME. Each running entry gets its own tab in the Build Output console, with its state and **Stop** and **Restart**. The tab cannot be closed while the process runs and comes back after a page reload. Building a project that is running asks first and can stop it, build it, and restart it after a successful build. Closing mvnBuilder stops every RUN process. See [Release notes v2.4.0](RELEASE_NOTES_2.4.0.md).
+
 ### 📱 Responsive Design
 MvnBuilder adapts to desktop, tablet, and mobile screens.
 

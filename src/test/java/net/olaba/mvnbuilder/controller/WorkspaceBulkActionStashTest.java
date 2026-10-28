@@ -47,10 +47,10 @@ class WorkspaceBulkActionStashTest {
                 .withWorkspace(net.olaba.mvnbuilder.entities.Workspace.builder().withId(1L).build()).build();
         when(mavenProjectRepository.findAllById(List.of(2L))).thenReturn(List.of(project));
 
-        controller.bulkAction(1L, List.of(2L), "stash", true);
+        controller.bulkAction(1L, List.of(2L), "stash", true, null);
         verify(buildService).bulkGitStash(List.of(project), true);
 
-        controller.bulkAction(1L, List.of(2L), "stash", false);
+        controller.bulkAction(1L, List.of(2L), "stash", false, null);
         verify(buildService).bulkGitStash(List.of(project), false);
     }
 
@@ -59,7 +59,7 @@ class WorkspaceBulkActionStashTest {
     void unknownActionDispatchesNothing() {
         when(mavenProjectRepository.findAllById(anyList())).thenReturn(List.of());
 
-        controller.bulkAction(1L, List.of(2L), "not-an-action", false);
+        controller.bulkAction(1L, List.of(2L), "not-an-action", false, null);
 
         verifyNoInteractions(buildService);
     }

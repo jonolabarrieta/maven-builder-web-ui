@@ -35,6 +35,13 @@ public class WorkspaceService {
     @org.springframework.context.annotation.Lazy
     private WorkspaceExchangeService exchange;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private net.olaba.mvnbuilder.repository.RunEntryRepository runEntries;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private RunProcessRegistry runProcesses;
+
     public String currentBranch(File directory) { return gitService.getCurrentBranch(directory); }
 
 
@@ -152,6 +159,8 @@ public class WorkspaceService {
     @Transactional
     public void deleteWorkspace(final Long id) {
         if (groups != null) groups.beforeDelete(id);
+        if (runProcesses != null) runProcesses.stopWorkspace(id);
+        if (runEntries != null) runEntries.deleteAll(runEntries.findByWorkspaceIdOrderByPositionAscIdAsc(id));
         workspaceRepository.deleteById(id);
     }
 
@@ -765,7 +774,8 @@ public class WorkspaceService {
      */
     @Transactional(readOnly = true)
     public String exportWorkspace(final Long workspaceId) {
-        if (exchange != null && groups != null && (groups.workspace(workspaceId).isParent() || !groups.list(workspaceId).isEmpty())) return exchange.export(workspaceId);
+        if (exchange != null && groups != null && (groups.workspace(workspaceId).isParent() || !groups.list(workspaceId).isEmpty()
+                || (runEntries != null && !runEntries.findByWorkspaceIdOrderByPositionAscIdAsc(workspaceId).isEmpty()))) return exchange.export(workspaceId);
         final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
         final StringBuilder sb = new StringBuilder();
         

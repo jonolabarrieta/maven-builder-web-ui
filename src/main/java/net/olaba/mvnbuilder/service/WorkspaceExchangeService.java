@@ -19,11 +19,17 @@ public class WorkspaceExchangeService {
     private final MavenProjectRepository projects;
     private final WorkspaceProjectGroupRepository groupRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final RunEntryRepository runEntries;
 
     public record Project(String key, String path, boolean nonMaven, boolean enabled) { }
     public record Block(String kind, String name, String parent, List<String> members, Map<String, Boolean> overrides) { }
     public record Definition(String key, String name, String basePath, List<String> exclusions, boolean parent,
-                             List<Project> projects, List<Block> blocks) { }
+                             List<Project> projects, List<Block> blocks,
+                             @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY) List<Run> runs) { }
+    public record Env(String name, String value) { }
+    /** A RUN entry; {@code project} is a file-local project key, qualified by {@code parent} for imported members. */
+    public record Run(String name, String command, String workingDirectory, List<Env> env, boolean useWorkspaceJava,
+                      String project, String parent) { }
     public record Bundle(int version, Definition workspace, List<Definition> parents) { }
 
     public String export(Long id) {
@@ -53,7 +59,19 @@ public class WorkspaceExchangeService {
                 blocks.add(new Block("IMPORTED", b.group().getName(), parentKeys.get(b.group().getParentWorkspace().getId()), List.of(), overrides));
             }
         }
-        return new Definition(key, ws.getName(), ws.getBasePath(), List.copyOf(ws.getExcludedPaths()), ws.isParent(), entries, blocks);
+        return new Definition(key, ws.getName(), ws.getBasePath(), List.copyOf(ws.getExcludedPaths()), ws.isParent(), entries, blocks,
+            ws.isParent() ? List.of() : runs(id, keys, parentKeys));
+    }
+    private List<Run> runs(Long id, Map<Long, String> ownKeys, Map<Long, String> parentKeys) {
+        Map<Long, String[]> importedKeys = new HashMap<>();
+        parentKeys.forEach((parentId, parentKey) -> projectKeys(parentId).forEach((projectId, projectKey) -> importedKeys.putIfAbsent(projectId, new String[] {parentKey, projectKey})));
+        return runEntries.findByWorkspaceIdOrderByPositionAscIdAsc(id).stream().map(e -> {
+            String project = null, parent = null;
+            if (e.getProjectId() != null && ownKeys.containsKey(e.getProjectId())) project = ownKeys.get(e.getProjectId());
+            else if (e.getProjectId() != null && importedKeys.containsKey(e.getProjectId())) { parent = importedKeys.get(e.getProjectId())[0]; project = importedKeys.get(e.getProjectId())[1]; }
+            return new Run(e.getName(), e.getCommand(), e.getWorkingDirectory(), e.getEnv().stream().map(v -> new Env(v.getName(), v.getValue())).toList(),
+                e.isUseWorkspaceJava(), project, parent);
+        }).toList();
     }
     private String path(MavenProject p) {
         return p.getAbsolutePath() != null ? p.getAbsolutePath() : new java.io.File(p.getWorkspace().getBasePath(), p.getRelativePath()).getAbsolutePath();
@@ -90,13 +108,43 @@ public class WorkspaceExchangeService {
             }
         }
         result.setBlocks(layout); workspaceRepository.save(result);
+        restoreRuns(bundle.workspace(), result, ids);
         for (Workspace parent : restored.values()) if (!parent.getId().equals(result.getId())) result.getImportWarnings().addAll(parent.getImportWarnings());
         return result;
+    }
+    private void restoreRuns(Definition d, Workspace owner, Map<String, Map<String, Long>> ids) {
+        if (d.runs() == null) return;
+        int position = 0;
+        for (Run r : d.runs()) {
+            RunEntry entry = new RunEntry();
+            entry.setWorkspace(owner); entry.setPosition(position++); entry.setName(r.name().trim()); entry.setCommand(r.command());
+            entry.setWorkingDirectory(r.workingDirectory()); entry.setUseWorkspaceJava(r.useWorkspaceJava());
+            if (r.env() != null) r.env().forEach(v -> entry.getEnv().add(new RunEnvVar(v.name(), v.value() == null ? "" : v.value())));
+            if (r.project() != null) {
+                Long projectId = ids.getOrDefault(r.parent() == null ? d.key() : r.parent(), Map.of()).get(r.project());
+                entry.setProjectId(projectId);
+                if (projectId == null) owner.getImportWarnings().add("RUN entry \"" + r.name() + "\" was imported without its project link; it keeps its working directory.");
+            }
+            if (!new java.io.File(r.workingDirectory()).isDirectory())
+                owner.getImportWarnings().add("RUN entry \"" + r.name() + "\" uses a working directory that does not exist: " + r.workingDirectory());
+            runEntries.save(entry);
+        }
     }
     private void validate(Definition d, Map<String, Definition> parents) {
         check(d != null && line(d.key()) && line(d.name()) && !d.name().isBlank() && d.name().length() <= 255 && (d.basePath() == null || line(d.basePath()))
             && d.projects() != null && d.blocks() != null && d.exclusions() != null, "Invalid workspace definition.");
         check(d.exclusions().stream().allMatch(WorkspaceExchangeService::line), "Invalid exclusion path.");
+        if (d.runs() != null) {
+            check(!d.parent() || d.runs().isEmpty(), "Parent definitions cannot contain RUN entries.");
+            Set<String> names = new HashSet<>();
+            for (Run r : d.runs()) {
+                check(r != null && line(r.name()) && !r.name().isBlank() && r.name().trim().length() <= 255 && names.add(r.name().trim().toLowerCase(Locale.ROOT))
+                    && r.command() != null && !r.command().isBlank() && r.command().length() <= 4000
+                    && line(r.workingDirectory()) && !r.workingDirectory().isBlank() && r.workingDirectory().length() <= 2000
+                    && (r.env() == null || r.env().stream().allMatch(v -> v != null && v.name() != null && v.name().matches("[A-Za-z_][A-Za-z0-9_.]*")))
+                    && (r.parent() == null || parents.containsKey(r.parent())), "Invalid or duplicate RUN entry.");
+            }
+        }
         Set<String> keys = new HashSet<>(), paths = new HashSet<>();
         for (Project p : d.projects()) check(p != null && line(p.key()) && keys.add(p.key()) && line(p.path()) && new java.io.File(p.path()).isAbsolute() && paths.add(WorkspaceGroupService.canonical(p.path())), "Invalid or duplicate project identity/path.");
         Set<String> members = new HashSet<>(), imported = new HashSet<>();

@@ -33,6 +33,15 @@ public class WorkspaceController {
     @org.springframework.beans.factory.annotation.Autowired
     private WorkspaceGroupService workspaceGroups;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private net.olaba.mvnbuilder.service.BuildGuardService buildGuard;
+
+    /** Starts a build through the RUN build guard (HTTP 409 when the user must decide). */
+    private void guardedBuild(final Long workspaceId, final List<MavenProject> targets, final String runGuard, final Runnable start) {
+        final String name = workspaceId == null ? null : workspaceService.getWorkspace(workspaceId).map(Workspace::getName).orElse(null);
+        net.olaba.mvnbuilder.service.BuildGuardService.build(buildGuard, workspaceId, name, targets, runGuard, start);
+    }
+
     private MavenProject contextualProject(Long id) {
         var attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
         if (workspaceGroups != null && attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet) {
@@ -302,8 +311,9 @@ public class WorkspaceController {
      */
     @PostMapping("/workspaces/{id}/build-all")
     @ResponseBody
-    public void buildAll(final @PathVariable Long id) {
-        buildService.buildWorkspaceSequentially(id);
+    public void buildAll(final @PathVariable Long id, final @RequestParam(required = false) String runGuard) {
+        guardedBuild(id, buildGuard == null ? List.of() : buildService.workspaceTargets(id), runGuard,
+                () -> buildService.buildWorkspaceSequentially(id));
     }
 
     /**
@@ -334,7 +344,8 @@ public class WorkspaceController {
     @ResponseBody
     public void bulkAction(final @PathVariable Long id, final @RequestParam List<Long> projectIds,
             final @RequestParam String action,
-            final @RequestParam(name = "includeUntracked", defaultValue = "false") boolean includeUntracked) {
+            final @RequestParam(name = "includeUntracked", defaultValue = "false") boolean includeUntracked,
+            final @RequestParam(required = false) String runGuard) {
         if (!java.util.Set.of("build", "fetch", "pull", "checkout-discard", "restore-staged", "stash").contains(action)) {
             log.warn("Unknown bulk action: {}", action); return;
         }
@@ -348,7 +359,7 @@ public class WorkspaceController {
 
         switch (action) {
             case "build":
-                buildService.buildProjectsSequentially(projects);
+                guardedBuild(id, projects, runGuard, () -> buildService.buildProjectsSequentially(projects));
                 break;
             case "fetch":
                 buildService.bulkGitFetch(projects);
@@ -522,10 +533,12 @@ public class WorkspaceController {
      */
     @PostMapping("/projects/{id}/build")
     @ResponseBody
-    public void buildProject(final @PathVariable Long id) {
+    public void buildProject(final @PathVariable Long id, final @RequestParam(required = false) String runGuard) {
         final MavenProject project = contextualProject(id);
         requireMaven(project);
-        buildService.buildProject(project);
+        final Long workspaceId = project.getConsumerWorkspaceId() != null ? project.getConsumerWorkspaceId()
+                : project.getWorkspace() == null ? null : project.getWorkspace().getId();
+        guardedBuild(workspaceId, List.of(project), runGuard, () -> buildService.buildProject(project));
     }
 
     /**
@@ -539,9 +552,11 @@ public class WorkspaceController {
     @PostMapping("/workspaces/{workspaceId}/projects/{projectId}/build-range")
     @ResponseBody
     public ResponseEntity<String> buildProjectRange(final @PathVariable Long workspaceId,
-            final @PathVariable Long projectId, final @RequestParam net.olaba.mvnbuilder.model.BuildRangeMode mode) {
+            final @PathVariable Long projectId, final @RequestParam net.olaba.mvnbuilder.model.BuildRangeMode mode,
+            final @RequestParam(required = false) String runGuard) {
         try {
-            buildService.buildWorkspaceRange(workspaceId, projectId, mode);
+            guardedBuild(workspaceId, buildGuard == null ? List.of() : buildService.rangeTargets(workspaceId, projectId, mode), runGuard,
+                    () -> buildService.buildWorkspaceRange(workspaceId, projectId, mode));
             return ResponseEntity.accepted().body("Build started.");
         } catch (final IllegalArgumentException error) {
             return ResponseEntity.badRequest().body(error.getMessage());

@@ -37,7 +37,8 @@
         if (selection) { reconcile(selection.selected); selection.render(); }
     }
     async function request(path, options) {
-        const response = await fetch(path, options);
+        // Builds may need an answer about running RUN entries before they start.
+        const response = await (window.RunGuard ? window.RunGuard.fetch : fetch)(path, options);
         if (!response.ok) {
             let message = await response.text();
             try { const parsed = JSON.parse(message); message = parsed.detail || parsed.message || parsed.error || message; } catch (_) {}

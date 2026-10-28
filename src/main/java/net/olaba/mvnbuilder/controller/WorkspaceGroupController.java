@@ -19,6 +19,8 @@ public class WorkspaceGroupController {
     private final BuildService builds;
     private final GitService git;
     private final NotificationService notifications;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private BuildGuardService buildGuard;
 
     private String back(Long id) { return "redirect:/workspaces/" + id; }
 
@@ -73,12 +75,14 @@ public class WorkspaceGroupController {
     public ResponseEntity<String> action(@PathVariable Long workspaceId, @PathVariable Long groupId,
             @RequestParam String action, @RequestParam(required=false) List<Long> projectIds,
             @RequestParam(defaultValue="false") boolean includeUntracked,
-            @RequestParam(defaultValue="false") boolean createNew, @RequestParam(required=false) String branch) {
+            @RequestParam(defaultValue="false") boolean createNew, @RequestParam(required=false) String branch,
+            @RequestParam(required=false) String runGuard) {
         List<MavenProject> targets = groups.scope(workspaceId, groupId, projectIds, false);
         if (Set.of("fetch","pull","checkout","stash","discard","unstage").contains(action) && BuildService.gitTargets(targets).isEmpty())
             return ResponseEntity.ok("No eligible Git repositories in this scope. Disabled or unavailable projects were omitted.");
         switch (action) {
-            case "build" -> builds.buildProjectsSequentially(targets);
+            case "build" -> BuildGuardService.build(buildGuard, workspaceId, groups.workspace(workspaceId).getName(), targets, runGuard,
+                () -> builds.buildProjectsSequentially(targets));
             case "fetch" -> builds.bulkGitFetch(targets);
             case "pull" -> builds.bulkGitPull(targets);
             case "stash" -> builds.bulkGitStash(targets, includeUntracked);

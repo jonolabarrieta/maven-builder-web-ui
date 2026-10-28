@@ -30,7 +30,10 @@ import static org.mockito.Mockito.*;
         "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 @Import({BuildService.class, BuildHistoryService.class})
+@org.springframework.test.context.event.RecordApplicationEvents
 class BuildServiceRecordingTest {
+
+    @Autowired private org.springframework.test.context.event.ApplicationEvents events;
 
     @Autowired private BuildService buildService;
     @Autowired private BuildRunRepository runRepository;
@@ -110,6 +113,48 @@ class BuildServiceRecordingTest {
         final BuildRun run = runRepository.findAll().get(0);
         assertEquals(BuildRunType.RANGE, run.getType());
         assertEquals(2, run.getBuiltProjectCount());
+    }
+
+    private List<BuildService.BuildFinishedEvent> finished() {
+        return events.stream(BuildService.BuildFinishedEvent.class).toList();
+    }
+
+    /** Successful, failed, single-project and guarded builds each publish one finished event. */
+    @Test
+    void finishedEventsCarryOutcomeAndGuardToken() {
+        buildService.buildWorkspaceSequentially(1L);
+        assertEquals(1, finished().size());
+        assertTrue(finished().get(0).success());
+        assertEquals(1L, finished().get(0).workspaceId());
+        assertNull(finished().get(0).guardToken());
+
+        failingLabel.set("mod-b");
+        buildService.startGuarded("token-1", () -> buildService.buildWorkspaceSequentially(1L));
+        assertEquals(2, finished().size());
+        assertFalse(finished().get(1).success());
+        assertEquals("token-1", finished().get(1).guardToken());
+
+        failingLabel.set(null);
+        buildService.startGuarded("token-2", () -> buildService.buildProject(project(10L, "mod-a", workspace(), true)));
+        assertEquals("token-2", finished().get(2).guardToken());
+        assertTrue(finished().get(2).success());
+
+        // The token is not leaked to later, unguarded builds.
+        buildService.buildWorkspaceRange(1L, 11L, BuildRangeMode.THROUGH);
+        assertNull(finished().get(3).guardToken());
+    }
+
+    /** A canceled run reports an unsuccessful finish. */
+    @Test
+    void canceledBuildPublishesUnsuccessfulEvent() {
+        when(processExecutionService.executeCommandWithJavaHome(anyString(), any(), any(), any(String[].class)))
+                .thenAnswer(invocation -> {
+                    buildService.cancelContinuations();
+                    return CompletableFuture.completedFuture(new CommandResult(0, List.of("ok"), 10));
+                });
+        buildService.buildWorkspaceSequentially(1L);
+        assertEquals(1, finished().size());
+        assertFalse(finished().get(0).success());
     }
 
     private Workspace workspace() {

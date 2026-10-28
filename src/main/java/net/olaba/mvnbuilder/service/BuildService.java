@@ -27,6 +27,33 @@ public class BuildService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private WorkspaceGroupService workspaceGroups;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.context.ApplicationEventPublisher events;
+
+    /**
+     * Published once a build started by this service has finished, failed or been stopped.
+     *
+     * @param guardToken token of the RUN build guard that started the build, or null
+     */
+    public record BuildFinishedEvent(Long workspaceId, String runId, boolean success, String guardToken) { }
+
+    /** Token of the RUN build guard starting a build on the current thread. */
+    private static final ThreadLocal<String> GUARD_TOKEN = new ThreadLocal<>();
+
+    /**
+     * Starts a build while tagging it with a guard token; the token is returned on the
+     * build's {@link BuildFinishedEvent}. Build start-up is synchronous, so the token is
+     * captured before {@code start} returns.
+     */
+    public void startGuarded(final String token, final Runnable start) {
+        GUARD_TOKEN.set(token);
+        try { start.run(); } finally { GUARD_TOKEN.remove(); }
+    }
+
+    private void publishFinished(final Long workspaceId, final String runId, final boolean success, final String token) {
+        if (events != null) events.publishEvent(new BuildFinishedEvent(workspaceId, runId, success, token));
+    }
+
 
     private final ProcessExecutionService processExecutionService;
     private final WorkspaceService workspaceService;
@@ -111,9 +138,15 @@ public class BuildService {
                 workspace == null ? null : workspace.getId(),
                 workspace == null ? null : workspace.getName(),
                 BuildRunType.PROJECT);
+        final String token = GUARD_TOKEN.get();
+        final String runId = java.util.UUID.randomUUID().toString();
         processExecutionService.executeCommandWithJavaHome(project.getDisplayName(), projectDir, javaHome, fullCmd)
+                .whenComplete((result, error) -> {
+                    if (error != null) publishFinished(workspace == null ? null : workspace.getId(), runId, false, token);
+                })
                 .thenAccept(result -> {
                     final boolean success = result.getExitCode() == 0;
+                    publishFinished(workspace == null ? null : workspace.getId(), runId, success, token);
                     recorder.projectBuilt(project.getDisplayName(), result.getDurationMs(), success);
                     buildHistoryService.finish(recorder, success);
                     final ActionSummary summary = ActionSummary.builder()
@@ -158,8 +191,10 @@ public class BuildService {
 
     private void executePlan(List<MavenProject> projects, BuildRunType type, List<String> command,
             String javaHome, List<String> omitted, Workspace workspace) {
+        final String token = GUARD_TOKEN.get();
         if (projects.stream().noneMatch(MavenProject::isEnabled)) {
             messagingTemplate.convertAndSend("/topic/logs",new LogMessage("Build", "No remaining Maven projects to build."));
+            publishFinished(workspace==null?null:workspace.getId(), null, true, token);
             return;
         }
         String runId=java.util.UUID.randomUUID().toString(); activeRuns.add(runId);
@@ -204,7 +239,10 @@ public class BuildService {
                     .withWorkspaceId(workspaceId).withRunId(runId).withSkippedProjects(List.copyOf(skipped))
                     .withSucceededProjects(List.copyOf(succeeded)).withFailedProject(failedName.get()).build();
                 publishSummary(summary,projects);
-            } finally { activeRuns.remove(runId); canceledRuns.remove(runId); }
+            } finally {
+                activeRuns.remove(runId); canceledRuns.remove(runId);
+                publishFinished(workspaceId, runId, success, token);
+            }
         });
     }
 
@@ -248,8 +286,12 @@ public class BuildService {
      * @param workspaceId The workspace ID.
      */
     public void buildWorkspaceSequentially(final Long workspaceId) {
-        final List<MavenProject> projects = workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId, true) : workspaceGroups.buildOrder(workspaceId);
-        buildProjectsSequentially(projects, BuildRunType.FULL);
+        buildProjectsSequentially(workspaceTargets(workspaceId), BuildRunType.FULL);
+    }
+
+    /** @return the projects Build All would consider, in order */
+    public List<MavenProject> workspaceTargets(final Long workspaceId) {
+        return workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId, true) : workspaceGroups.buildOrder(workspaceId);
     }
 
     /**
@@ -260,15 +302,22 @@ public class BuildService {
      * @param mode selection direction
      */
     public void buildWorkspaceRange(final Long workspaceId, final Long projectId, final BuildRangeMode mode) {
+        buildProjectsSequentially(rangeTargets(workspaceId, projectId, mode), mode == BuildRangeMode.ONLY ? BuildRunType.PROJECT : BuildRunType.RANGE);
+    }
+
+    /**
+     * Resolves the projects of an inclusive range build.
+     *
+     * @throws IllegalArgumentException when the project is not part of the workspace
+     */
+    public List<MavenProject> rangeTargets(final Long workspaceId, final Long projectId, final BuildRangeMode mode) {
         final List<MavenProject> projects = workspaceGroups == null ? workspaceService.getProjectsForWorkspace(workspaceId, true) : workspaceGroups.composition(workspaceId).roots();
-        final BuildRunType type = mode == BuildRangeMode.ONLY ? BuildRunType.PROJECT : BuildRunType.RANGE;
         MavenProject selected = (workspaceGroups == null ? projects : workspaceGroups.scope(workspaceId, null, List.of(projectId), true)).stream()
             .filter(p -> p.getId().equals(projectId)).findFirst().orElseThrow(() -> new IllegalArgumentException("Project does not belong to the workspace."));
         boolean nestedModule = projects.stream().noneMatch(p -> p.getId().equals(projectId));
         List<MavenProject> scoped = workspaceGroups == null ? projects
             : workspaceGroups.scope(workspaceId, selected.getContextGroupId(), null, nestedModule);
-        if (mode == BuildRangeMode.ONLY) buildProjectsSequentially(List.of(selected), type);
-        else buildProjectsSequentially(selectBuildRange(scoped, projectId, mode), type);
+        return mode == BuildRangeMode.ONLY ? List.of(selected) : selectBuildRange(scoped, projectId, mode);
     }
 
     /**

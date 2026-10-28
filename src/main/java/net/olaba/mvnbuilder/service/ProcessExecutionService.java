@@ -76,25 +76,10 @@ public class ProcessExecutionService {
                 pb.environment().put("GCM_INTERACTIVE", "never");
             }
 
-            // Inject custom JAVA_HOME and prepand its bin folder to PATH
+            // Inject custom JAVA_HOME and prepend its bin folder to PATH
             if (javaHome != null && !javaHome.trim().isEmpty()) {
-                final File jHomeDir = new File(javaHome.trim());
-                if (jHomeDir.exists() && jHomeDir.isDirectory()) {
-                    pb.environment().put("JAVA_HOME", jHomeDir.getAbsolutePath());
-                    final String pathSeparator = File.pathSeparator;
-                    final String fileSeparator = File.separator;
-                    final String binPath = jHomeDir.getAbsolutePath() + fileSeparator + "bin";
-
-                    final String currentPath = pb.environment().get("PATH");
-                    if (currentPath != null) {
-                        pb.environment().put("PATH", binPath + pathSeparator + currentPath);
-                    } else {
-                        pb.environment().put("PATH", binPath);
-                    }
-                    sendLog(label, "Using JAVA_HOME override: " + jHomeDir.getAbsolutePath());
-                } else {
-                    sendLog(label, "WARNING: Configured JAVA_HOME path does not exist: " + javaHome + ". Using system default Java.");
-                }
+                final String warning = ProcessTrees.applyJavaHome(pb.environment(), javaHome);
+                sendLog(label, warning != null ? warning : "Using JAVA_HOME override: " + new File(javaHome.trim()).getAbsolutePath());
             }
 
             process = pb.start();
@@ -178,31 +163,8 @@ public class ProcessExecutionService {
      */
     private void killProcess(final Process process) {
         if (process != null && process.isAlive()) {
-            final long pid = process.pid();
-            log.info("Killing process with PID: {}", pid);
-
-            if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                try {
-                    // On Windows, destroying the parent batch process (mvn.cmd) often leaves
-                    // the child Java process running. 'taskkill /F /T /PID' kills the entire tree.
-                    new ProcessBuilder("taskkill", "/F", "/T", "/PID", String.valueOf(pid)).start().waitFor();
-                } catch (final Exception e) {
-                    log.error("Failed to execute taskkill: {}", e.getMessage());
-                    process.destroyForcibly();
-                }
-            } else {
-                process.destroy(); // Send SIGTERM
-                try {
-                    // Wait up to 2 seconds for clean exit before forcing
-                    if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                        log.warn("Process did not exit in time, forcing kill...");
-                        process.destroyForcibly(); // Send SIGKILL
-                    }
-                } catch (final InterruptedException e) {
-                    process.destroyForcibly();
-                    Thread.currentThread().interrupt();
-                }
-            }
+            log.info("Killing process tree with PID: {}", process.pid());
+            ProcessTrees.terminate(process, java.time.Duration.ofSeconds(2));
         }
     }
 

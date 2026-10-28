@@ -38,7 +38,7 @@ class ManualProjectControllerTest {
     @Test void folderCannotInvokeMavenOrM2Operations() {
         MavenProject folder=MavenProject.builder().withId(1L).withProjectKind(ProjectKind.FOLDER).build();
         when(mavenProjectRepository.findById(1L)).thenReturn(Optional.of(folder));
-        assertThrows(ResponseStatusException.class,()->controller.buildProject(1L));
+        assertThrows(ResponseStatusException.class,()->controller.buildProject(1L,null));
         assertThrows(ResponseStatusException.class,()->controller.getProjectProperties(1L,new ExtendedModelMap()));
         assertThrows(ResponseStatusException.class,()->controller.getM2Info(1L,new ExtendedModelMap()));
         assertThrows(ResponseStatusException.class,()->controller.deleteM2Version(1L,"1",new ExtendedModelMap()));
@@ -48,7 +48,7 @@ class ManualProjectControllerTest {
     @Test void bulkCannotBuildAnotherWorkspacesProjects() {
         var project=MavenProject.builder().withId(2L).withWorkspace(Workspace.builder().withId(2L).build()).build();
         when(mavenProjectRepository.findAllById(List.of(2L))).thenReturn(List.of(project));
-        assertThrows(ResponseStatusException.class,()->controller.bulkAction(1L,List.of(2L),"build",false)); verifyNoInteractions(buildService);
+        assertThrows(ResponseStatusException.class,()->controller.bulkAction(1L,List.of(2L),"build",false,null)); verifyNoInteractions(buildService);
     }
     @Test void continuationEndpointUsesServerQueueAndReturnsOutcome() {
         when(buildService.continueBuild(1L,"token","skip")).thenReturn(new BuildService.ContinuationResult("empty","No remaining projects"));

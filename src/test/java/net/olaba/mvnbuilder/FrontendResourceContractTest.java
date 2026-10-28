@@ -62,4 +62,33 @@ class FrontendResourceContractTest {
             }
         }
     }
+
+    /**
+     * Keeps the RUN console, launch dialog and build guard wired into the workspace page.
+     *
+     * @throws IOException when a resource cannot be read
+     */
+    @Test
+    void workspace_page_wires_run_entries_and_build_guard() throws IOException {
+        final String page = Files.readString(TEMPLATE_ROOT.resolve("workspace-detail.html"), StandardCharsets.UTF_8);
+        final Path js = Path.of("src", "main", "resources", "static", "js");
+        final String run = Files.readString(js.resolve("run-processes.js"), StandardCharsets.UTF_8);
+        final String groups = Files.readString(js.resolve("workspace-groups.js"), StandardCharsets.UTF_8);
+
+        assertTrue(page.contains("src=\"/js/run-processes.js\""), "workspace page must load the RUN module");
+        assertTrue(page.contains("data-run-open "), "workspace page must offer the Run action");
+        assertTrue(page.contains("data-run-open-config"), "workspace page must offer the RUN configuration");
+        assertTrue(page.contains("id=\"run-launch-modal\"") && page.contains("id=\"run-config-modal\""), "RUN dialogs must exist");
+        assertTrue(page.contains("window.RunTabs?.connected(stompClient)"), "RUN tabs must subscribe when the socket connects");
+        assertTrue(page.contains("!window.RunTabs.beforeClose(label)"), "closing a running RUN tab must be refused");
+        assertTrue(page.contains("!window.RunTabs?.isRunTab(label)"), "clearing logs must keep RUN tabs");
+        assertTrue(page.contains("window.RunGuard.fetch"), "selection builds must answer the build guard");
+        assertTrue(groups.contains("window.RunGuard.fetch"), "group builds must answer the build guard");
+
+        assertTrue(run.contains("'htmx:responseError'") && run.contains("xhr.status !== 409"), "htmx builds must answer the build guard");
+        assertTrue(run.contains("runGuard="), "guarded requests must be re-sent with the answer");
+        assertTrue(run.contains("/run/state"), "RUN tabs must be restored after a reload");
+        assertTrue(run.contains("message.seq <= tab.lastSeq"), "restored and live lines must not be duplicated");
+        assertFalse(run.contains("followBuild"), "RUN output must not drive the follow toggle");
+    }
 }

@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportRuntimeHints;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Configuration for GraalVM native image runtime hints.
@@ -54,6 +55,18 @@ public class NativeRuntimeHints {
         public void registerHints(final RuntimeHints hints, final ClassLoader classLoader) {
             hints.reflection().registerType(net.olaba.mvnbuilder.entities.ProjectKind.class, MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(net.olaba.mvnbuilder.service.BuildService.ContinuationResult.class, MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS, MemberCategory.INVOKE_PUBLIC_METHODS);
+            // RUN entries: WebSocket/JSON payloads, template views and the persisted entity.
+            for (Class<?> type : List.of(net.olaba.mvnbuilder.service.RunProcessRegistry.RunMessage.class,
+                    net.olaba.mvnbuilder.service.RunProcessRegistry.Snapshot.class, net.olaba.mvnbuilder.service.RunProcessRegistry.Line.class,
+                    net.olaba.mvnbuilder.service.RunProcessRegistry.State.class, net.olaba.mvnbuilder.controller.RunController.StartResult.class,
+                    net.olaba.mvnbuilder.controller.RunController.EntryParams.class, net.olaba.mvnbuilder.controller.RunGuardAdvice.GuardResponse.class,
+                    net.olaba.mvnbuilder.service.BuildGuardService.RunningEntry.class, net.olaba.mvnbuilder.service.RunConfigurationService.Form.class,
+                    net.olaba.mvnbuilder.service.RunConfigurationService.EntryView.class, net.olaba.mvnbuilder.service.RunConfigurationService.ProjectOption.class,
+                    net.olaba.mvnbuilder.service.WorkspaceExchangeService.Run.class, net.olaba.mvnbuilder.service.WorkspaceExchangeService.Env.class,
+                    net.olaba.mvnbuilder.entities.RunEntry.class, net.olaba.mvnbuilder.entities.RunEnvVar.class)) {
+                hints.reflection().registerType(type, MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS, MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
+                        MemberCategory.INVOKE_PUBLIC_METHODS, MemberCategory.DECLARED_FIELDS);
+            }
             hints.reflection().registerType(net.olaba.mvnbuilder.service.GitService.ReferenceChoice.class,
                     MemberCategory.INVOKE_PUBLIC_METHODS);
             hints.reflection().registerType(net.olaba.mvnbuilder.service.GitService.ReferenceState.class,
