@@ -239,7 +239,7 @@ public class WorkspaceController {
         log.info("Asynchronously refreshing Git status for workspace ID {}", id);
         if (workspaceGroups != null) {
             var sources = workspaceGroups.composition(id).roots().stream().map(p -> p.getWorkspace().getId()).distinct().toList();
-            sources.forEach(workspaceService::refreshGitStatus);
+            workspaceService.refreshGitStatus(sources);
             return workspaceGroups.composition(id).roots().stream().map(p -> new GitBranchUpdate(p.getId(), p.getGitBranch())).toList();
         }
         return workspaceService.refreshGitStatus(id).stream()

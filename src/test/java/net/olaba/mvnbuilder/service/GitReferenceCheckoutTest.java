@@ -200,6 +200,60 @@ class GitReferenceCheckoutTest {
         }
     }
 
+    @Test
+    void branchLabelsComeFromTheLightweightLookup() throws Exception {
+        assertEquals("main", service.getCurrentBranch(directory.toFile()));
+        git("checkout", "--detach", taggedCommit);
+        assertEquals("v1.0.0 · detached HEAD", service.getCurrentBranch(directory.toFile()));
+    }
+
+    @Test
+    void unbornBranchShowsItsName() throws Exception {
+        final Path fresh = Files.createTempDirectory(directory.getParent(), "unborn-git-");
+        try {
+            final var builder = new ProcessBuilder("git", "init", "-b", "main").directory(fresh.toFile());
+            assertEquals(0, builder.start().waitFor());
+            assertEquals("main", service.getCurrentBranch(fresh.toFile()));
+        } finally {
+            org.springframework.util.FileSystemUtils.deleteRecursively(fresh);
+        }
+    }
+
+    @Test
+    void longBranchLabelsAreTruncatedAsBefore() throws Exception {
+        final String name = "b" + "x".repeat(120) + "/" + "y".repeat(120) + "/" + "z".repeat(120);
+        git("checkout", "-b", name);
+        final String label = service.getCurrentBranch(directory.toFile());
+        assertEquals(255, label.length());
+        assertEquals(service.getCurrentReference(directory.toFile()).getLabel(), label);
+        assertTrue(label.endsWith("…"));
+    }
+
+    @Test
+    void branchLookupStartsOneGitProcessUnlessDetached() throws Exception {
+        final var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GitService.class);
+        final var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        final var previous = logger.getLevel();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        try {
+            service.getCurrentBranch(directory.toFile());
+            assertEquals(1, gitProcesses(appender));
+            appender.list.clear();
+            git("checkout", "--detach", taggedCommit);
+            service.getCurrentBranch(directory.toFile());
+            assertTrue(gitProcesses(appender) > 1);
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previous);
+        }
+    }
+
+    private static long gitProcesses(final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender) {
+        return appender.list.stream().filter(event -> event.getFormattedMessage().startsWith("Executing [git")).count();
+    }
+
     private GitService.ReferenceState checkout(final String ref, final String type) {
         return service.checkoutReference(directory.toFile(), ref, type);
     }

@@ -107,6 +107,37 @@ class WorkspaceHierarchyRefreshTest {
         assertMatchesLegacyHierarchy(service, workspace, stored.get());
     }
 
+    /** The rescan reads only the filesystem; stored branches wait for the Git phase. */
+    @Test
+    void rescanNeverRunsGitAndKeepsStoredBranches() throws IOException {
+        final Path base = temporaryDirectory.resolve("no-git");
+        writePom(base.resolve("api"), "api");
+        writePom(base.resolve("lib"), "lib");
+        Files.createDirectories(temporaryDirectory.resolve("docs"));
+        final Workspace workspace = Workspace.builder().withId(4L).withBasePath(base.toString()).build();
+        final MavenProject api = MavenProject.builder().withId(40L).withRelativePath("api")
+                .withAbsolutePath(base.resolve("api").toString()).withWorkspace(workspace)
+                .withGitBranch("feature/x").build();
+        final MavenProject docs = MavenProject.builder().withId(41L).withRelativePath("../docs")
+                .withAbsolutePath(temporaryDirectory.resolve("docs").toString()).withWorkspace(workspace)
+                .withProjectKind(net.olaba.mvnbuilder.entities.ProjectKind.FOLDER).withGitBranch("release").build();
+        final AtomicReference<List<MavenProject>> stored = new AtomicReference<>(List.of(api, docs));
+        final GitService git = mock(GitService.class);
+        final WorkspaceService service = serviceWithStoredProjects(workspace, stored, git);
+
+        service.refreshWorkspace(4L);
+
+        verifyNoInteractions(git);
+        assertEquals(Set.of("api", "lib", "../docs"), paths(stored.get()));
+        assertEquals("feature/x", branch(stored.get(), "api"));
+        assertEquals("release", branch(stored.get(), "../docs"));
+        assertNull(branch(stored.get(), "lib"), "new rows get their branch from the Git phase");
+    }
+
+    private static String branch(final List<MavenProject> projects, final String path) {
+        return projects.stream().filter(p -> p.getRelativePath().equals(path)).findFirst().orElseThrow().getGitBranch();
+    }
+
     /** Compares the optimized summary against the previous all-pairs definitions. */
     private void assertMatchesLegacyHierarchy(final WorkspaceService service, final Workspace workspace,
             final List<MavenProject> projects) {
@@ -125,10 +156,16 @@ class WorkspaceHierarchyRefreshTest {
     /** Supplies an in-memory repository that keeps assigned IDs across rescans. */
     private WorkspaceService serviceWithStoredProjects(final Workspace workspace,
             final AtomicReference<List<MavenProject>> stored) {
+        final GitService gitService = mock(GitService.class);
+        when(gitService.getCurrentBranch(any(File.class))).thenReturn("main");
+        return serviceWithStoredProjects(workspace, stored, gitService);
+    }
+
+    private WorkspaceService serviceWithStoredProjects(final Workspace workspace,
+            final AtomicReference<List<MavenProject>> stored, final GitService gitService) {
         final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
         final MavenProjectRepository projectRepository = mock(MavenProjectRepository.class);
         final BuildProfileRepository profileRepository = mock(BuildProfileRepository.class);
-        final GitService gitService = mock(GitService.class);
         final AtomicLong nextId = new AtomicLong(100);
         when(workspaceRepository.findById(workspace.getId())).thenReturn(java.util.Optional.of(workspace));
         when(projectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(anyLong()))
@@ -142,7 +179,6 @@ class WorkspaceHierarchyRefreshTest {
             stored.set(saved);
             return saved;
         });
-        when(gitService.getCurrentBranch(any(File.class))).thenReturn("main");
         return new WorkspaceService(workspaceRepository, projectRepository,
                 new MavenService(), gitService, profileRepository);
     }

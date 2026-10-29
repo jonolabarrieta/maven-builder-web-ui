@@ -101,6 +101,7 @@ Set these Spring properties in the usual application configuration or command-li
 | `workspace.git.refresh-interval-seconds` | 60 | Returning to the page refreshes the active repository and only repositories older than this |
 | `workspace.git.highlight-max-lines` | 5000 | Larger comparisons are shown without syntax highlighting |
 | `workspace.git.stale-fetch-hours` | 24 | Age after which the synchronization overview flags a repository's last fetch |
+| `workspace.git.branch-workers` | 6 | Concurrent branch reads when the workspace page refreshes project branches. Each repository is read once per refresh; `1` restores sequential reads |
 
 The `workspace.git.scan-directory-limit` and `workspace.git.scan-exclude` properties no longer exist, because discovery resolves registered project folders instead of walking the base folder.
 

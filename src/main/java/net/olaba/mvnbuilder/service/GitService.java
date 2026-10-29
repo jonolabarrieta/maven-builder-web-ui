@@ -72,9 +72,17 @@ public class GitService {
         public ReferenceConflictException(final String message) { super(message); }
     }
 
-    /** Returns a cache-compatible label, including exact tags or detached commit identity. */
+    /**
+     * Returns a cache-compatible label, including exact tags or detached commit identity.
+     * A branch checkout costs one Git process; only a detached HEAD needs the full lookup.
+     */
     public String getCurrentBranch(final File projectDir) {
         try {
+            final GitResult symbolic = runGit(projectDir, "symbolic-ref", "--quiet", "HEAD");
+            if (symbolic.exitCode() == 0) {
+                return new ReferenceState(symbolic.output().strip(), null, List.of(), null).getLabel();
+            }
+            if (symbolic.exitCode() != 1) throw new IllegalStateException(symbolic.message());
             return getCurrentReference(projectDir).getLabel();
         } catch (final RuntimeException e) {
             log.warn("Failed to get Git reference for {}: {}", projectDir, e.getMessage());

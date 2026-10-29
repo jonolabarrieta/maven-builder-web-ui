@@ -244,6 +244,23 @@ class WorkspaceGroupsIntegrationTest {
         assertThrows(ResponseStatusException.class,()->builds.continueBuild(a.getId(),failure.getValue().continuationId(),"retry"));
         verify(processes,times(1)).executeCommandWithJavaHome(anyString(),any(),any(),any(String[].class));
     }
+    @Test void gitStatusReadsARepositorySharedByConsumerAndParentOnce() throws Exception {
+        Workspace p=parent("Shared"), a=workspace("A");
+        git.text(base, "init", "-b", "trunk");
+        MavenProject own=add(a,"own",false), imported=add(p,"imported",false);
+        groups.create(a.getId(),"Libraries",p.getId());
+        var logger=(ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(GitService.class);
+        var appender=new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        var level=logger.getLevel(); appender.start(); logger.addAppender(appender); logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        try {
+            mvc.perform(get("/workspaces/" + a.getId() + "/git-status-table")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[*].branch").value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is("trunk"))));
+        } finally { logger.detachAppender(appender); logger.setLevel(level); }
+        assertEquals(1, appender.list.stream().filter(e -> e.getFormattedMessage().startsWith("Executing [git")).count(), appender.list.toString());
+        assertEquals("trunk", projects.findById(own.getId()).orElseThrow().getGitBranch());
+        assertEquals("trunk", projects.findById(imported.getId()).orElseThrow().getGitBranch());
+    }
     @Test void gitDeduplicatesNestedProjectsAndKeepsWorktreesIndependent() throws Exception {
         Workspace a=workspace("A"); var x=add(a,"repo",false);
         new ProcessBuilder("git","init",x.getAbsolutePath()).start().waitFor();

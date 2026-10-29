@@ -64,12 +64,12 @@ class WorkspaceScaleBenchmarkTest {
                 .withWorkspace(workspace).build();
         final AtomicReference<List<MavenProject>> stored = new AtomicReference<>(List.of(externalParent));
         final AtomicInteger gitCalls = new AtomicInteger();
-        final AtomicLong gitNanos = new AtomicLong();
 
         final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
         final MavenProjectRepository projectRepository = mock(MavenProjectRepository.class);
         final BuildProfileRepository profileRepository = mock(BuildProfileRepository.class);
         final GitService gitService = mock(GitService.class);
+        when(workspaceRepository.findById(1L)).thenReturn(java.util.Optional.of(workspace));
         when(projectRepository.findByWorkspaceIdOrderByExecutionOrderAsc(anyLong()))
                 .thenAnswer(invocation -> stored.get());
         when(projectRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -87,10 +87,8 @@ class WorkspaceScaleBenchmarkTest {
             return saved;
         });
         when(gitService.getCurrentBranch(any(File.class))).thenAnswer(invocation -> {
-            final long gitStart = System.nanoTime();
             Thread.sleep(5);
             gitCalls.incrementAndGet();
-            gitNanos.addAndGet(System.nanoTime() - gitStart);
             return "main";
         });
 
@@ -99,6 +97,15 @@ class WorkspaceScaleBenchmarkTest {
         final long scanStart = System.nanoTime();
         service.scanAndImportProjects(workspace);
         final long scanMillis = elapsedMillis(scanStart);
+        final int scanGitCalls = gitCalls.getAndSet(0);
+        // The Git phase that follows every refresh, at the default branch-reader limit.
+        final List<MavenProject> scanned = stored.get();
+        final long gitStart = System.nanoTime();
+        service.refreshGitStatus(1L);
+        final long gitMillis = elapsedMillis(gitStart);
+        // The mocked saveAll keeps only what was saved last; the Git phase saves top-level rows only.
+        stored.set(scanned);
+        service.closeBranchReaders();
         final long hierarchyStart = System.nanoTime();
         final WorkspaceProjectHierarchy hierarchy = service.getProjectHierarchyForWorkspace(1L);
         final List<MavenProject> parents = hierarchy.topLevelProjects();
@@ -119,11 +126,11 @@ class WorkspaceScaleBenchmarkTest {
         final byte[] gitPayload = new ObjectMapper().writeValueAsBytes(parents.stream()
                 .map(project -> new WorkspaceController.GitBranchUpdate(project.getId(), project.getGitBranch()))
                 .toList());
-        System.out.printf("WORKSPACE_SCALE projects=%d parents=%d scan_ms=%d git_calls=%d git_ms=%d "
+        System.out.printf("WORKSPACE_SCALE projects=%d parents=%d scan_ms=%d scan_git_calls=%d git_calls=%d git_ms=%d "
                         + "hierarchy_ms=%d children_ms=%d template_ms=%d html_bytes=%d "
                         + "fragment_ms=%d fragment_bytes=%d git_payload_bytes=%d%n",
-                stored.get().size(), parents.size(), scanMillis, gitCalls.get(),
-                TimeUnit.NANOSECONDS.toMillis(gitNanos.get()), hierarchyMillis, childrenMillis,
+                stored.get().size(), parents.size(), scanMillis, scanGitCalls, gitCalls.get(),
+                gitMillis, hierarchyMillis, childrenMillis,
                 templateMillis, renderedPage.getBytes(StandardCharsets.UTF_8).length,
                 fragmentMillis, renderedFragment.getBytes(StandardCharsets.UTF_8).length,
                 gitPayload.length);
@@ -195,6 +202,11 @@ class WorkspaceScaleBenchmarkTest {
         context.setVariable("workspace", workspace);
         context.setVariable("projects", hierarchy.topLevelProjects());
         context.setVariable("projectIdsWithChildren", hierarchy.projectIdsWithChildren());
+        context.setVariable("blocks", hierarchy.topLevelProjects().stream()
+                .map(p -> new WorkspaceGroupService.Block("p:" + p.getId(), null, List.of(p))).toList());
+        context.setVariable("groups", List.of());
+        context.setVariable("parents", List.of());
+        context.setVariable("consumers", List.of());
         context.setVariable("availableGroupIds", List.of());
         context.setVariable("javaInstallations", List.of());
         context.setVariable("currentVersion", "benchmark");

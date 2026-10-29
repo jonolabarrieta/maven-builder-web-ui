@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
  */
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class WorkspaceService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     @org.springframework.context.annotation.Lazy
@@ -43,6 +44,27 @@ public class WorkspaceService {
     private RunProcessRegistry runProcesses;
 
     public String currentBranch(File directory) { return gitService.getCurrentBranch(directory); }
+
+    /** Shared by every Git status request so concurrent pages cannot multiply Git processes. */
+    private final java.util.concurrent.ThreadPoolExecutor branchReaders = new java.util.concurrent.ThreadPoolExecutor(
+            6, 6, 0, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(),
+            Thread.ofVirtual().name("git-branch-", 0).factory());
+
+    @org.springframework.beans.factory.annotation.Value("${workspace.git.branch-workers:6}")
+    private int branchWorkerCount = 6;
+
+    @jakarta.annotation.PostConstruct
+    void configureBranchReaders() {
+        final int size = Math.max(1, branchWorkerCount);
+        branchReaders.setCorePoolSize(Math.min(size, branchReaders.getCorePoolSize()));
+        branchReaders.setMaximumPoolSize(size);
+        branchReaders.setCorePoolSize(size);
+    }
+
+    int branchReaderLimit() { return branchReaders.getMaximumPoolSize(); }
+
+    @jakarta.annotation.PreDestroy
+    void closeBranchReaders() { branchReaders.shutdownNow(); }
 
 
     private final WorkspaceRepository workspaceRepository;
@@ -271,8 +293,7 @@ public class WorkspaceService {
         findPomFiles(baseDir, pomFiles, baseDir, excludedPaths);
         final String versionProfileId = activeVersionProfileId();
 
-        // Get excluded paths
-        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
+        // Branches are read by the Git phase that follows a rescan, never here.
 
         // Load existing projects for the workspace first in a single query
         final List<MavenProject> existingProjects = mavenProjectRepository
@@ -287,7 +308,6 @@ public class WorkspaceService {
 
         for (MavenProject folder : existingProjects) {
             if (!folder.isMaven()) {
-                if (folder.isAvailable()) folder.setGitBranch(gitService.getCurrentBranch(new File(folder.getAbsolutePath())));
                 projectsToSave.add(folder);
             }
         }
@@ -330,12 +350,6 @@ public class WorkspaceService {
                     projectToSave.setWorkspace(workspace);
                 }
 
-                final File projectDir = pomFile.getParentFile();
-                final File gitRoot = findGitRoot(projectDir);
-                final File cacheKey = gitRoot != null ? gitRoot : projectDir;
-
-                final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
-                projectToSave.setGitBranch(branch);
                 projectsToSave.add(projectToSave);
             }
         }
@@ -388,12 +402,6 @@ public class WorkspaceService {
                         projectToSave.setWorkspace(workspace);
                     }
 
-                    final File projectDir = pomFile.getParentFile();
-                    final File gitRoot = findGitRoot(projectDir);
-                    final File cacheKey = gitRoot != null ? gitRoot : projectDir;
-
-                    final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
-                    projectToSave.setGitBranch(branch);
                     projectsToSave.add(projectToSave);
                 }
             }
@@ -636,34 +644,75 @@ public class WorkspaceService {
      * @return the top-level projects with their refreshed branch values
      */
     public List<MavenProject> refreshGitStatus(final Long workspaceId) {
-        final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
-        final List<MavenProject> projects = getProjectsForWorkspace(workspaceId, true);
+        return refreshGitStatus(List.of(workspaceId));
+    }
 
-        final java.util.Map<File, String> gitRootBranchCache = new java.util.HashMap<>();
-        final List<MavenProject> updatedProjects = new java.util.ArrayList<>();
-
-        for (final MavenProject project : projects) {
-            final File projectDir;
-            if (project.getAbsolutePath() != null) {
-                projectDir = new File(project.getAbsolutePath());
-            } else {
-                if (workspace.getBasePath() == null || project.getRelativePath() == null) continue;
-                final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
-                projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
+    /**
+     * Refreshes the branches of the top-level projects of several source workspaces in one pass.
+     * Each distinct repository is read once, in parallel through the shared branch readers; a
+     * project outside any repository gets {@code n/a} without starting Git.
+     *
+     * @param workspaceIds the source workspaces, typically a consumer and its imported parents
+     * @return the top-level projects of every workspace with their refreshed branch values
+     */
+    public List<MavenProject> refreshGitStatus(final java.util.Collection<Long> workspaceIds) {
+        final List<MavenProject> projects = new ArrayList<>();
+        final List<MavenProject> updatedProjects = new ArrayList<>();
+        final Map<File, List<MavenProject>> projectsByRoot = new java.util.LinkedHashMap<>();
+        for (final Long workspaceId : new java.util.LinkedHashSet<>(workspaceIds)) {
+            final Workspace workspace = workspaceRepository.findById(workspaceId).orElseThrow();
+            for (final MavenProject project : getProjectsForWorkspace(workspaceId, true)) {
+                projects.add(project);
+                final File projectDir;
+                if (project.getAbsolutePath() != null) {
+                    projectDir = new File(project.getAbsolutePath());
+                } else {
+                    if (workspace.getBasePath() == null || project.getRelativePath() == null) continue;
+                    final String normalizedRelativePath = project.getRelativePath().replace('/', File.separatorChar);
+                    projectDir = new File(new File(workspace.getBasePath()), normalizedRelativePath);
+                }
+                final File gitRoot = findGitRoot(projectDir);
+                if (gitRoot == null) {
+                    project.setGitBranch("n/a");
+                    updatedProjects.add(project);
+                } else {
+                    projectsByRoot.computeIfAbsent(gitRoot, key -> new ArrayList<>()).add(project);
+                }
             }
+        }
 
-            final File gitRoot = findGitRoot(projectDir);
-            final File cacheKey = gitRoot != null ? gitRoot : projectDir;
-
-            final String branch = gitRootBranchCache.computeIfAbsent(cacheKey, key -> gitService.getCurrentBranch(key));
-            project.setGitBranch(branch);
-            updatedProjects.add(project);
+        final Map<File, java.util.concurrent.Future<String>> reads = new java.util.LinkedHashMap<>();
+        for (final File root : projectsByRoot.keySet()) {
+            reads.put(root, branchReaders.submit(() -> gitService.getCurrentBranch(root)));
+        }
+        // Every Git call is bounded by its own timeout; this only guards against a stuck queue.
+        final int rounds = (reads.size() + branchReaders.getMaximumPoolSize() - 1) / branchReaders.getMaximumPoolSize();
+        final long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15L * (rounds + 1));
+        for (final Map.Entry<File, java.util.concurrent.Future<String>> read : reads.entrySet()) {
+            final String branch = awaitBranch(read.getKey(), read.getValue(), deadline);
+            for (final MavenProject project : projectsByRoot.get(read.getKey())) {
+                project.setGitBranch(branch);
+                updatedProjects.add(project);
+            }
         }
 
         if (!updatedProjects.isEmpty()) {
             mavenProjectRepository.saveAll(updatedProjects);
         }
         return projects;
+    }
+
+    private static String awaitBranch(final File root, final java.util.concurrent.Future<String> read, final long deadline) {
+        try {
+            return read.get(Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            read.cancel(true);
+        } catch (final java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException e) {
+            read.cancel(true);
+            log.warn("Failed to read the Git branch of {}: {}", root, e.toString());
+        }
+        return "n/a";
     }
 
     /**
